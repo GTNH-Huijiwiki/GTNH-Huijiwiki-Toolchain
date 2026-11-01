@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from bounded_json import HARD_MAX_BYTES, encode_json
 from item_names import read_items
+from name_recipes import collect_handlers
 from routing_hash import bucket_id
 import split_all
 
@@ -177,6 +178,31 @@ class SplitOutputTests(unittest.TestCase):
                 self.assertEqual(recipe.pop("index"), f"{path.stem}/{position}")
                 found.append(recipe)
         self.assertEqual(found, recipes)
+
+    def test_cutting_fluid_candidates_keep_amounts_order_and_usage_indexes(self):
+        source = self.source / 'recipes/gregtech'
+        source.mkdir(parents=True)
+        handler = 'gregtech/GTNEIDefaultHandler_fakecuttingsaw'
+        recipes = [
+            {'inputItems': ['example:plate'], 'outputItems': [{'key': 'example:foil', 'amount': 4}],
+             'inputFluids': [[{'key': 'fluid.lubricant', 'amount': 13, 'chance': 10000},
+                              {'key': 'fluid.water', 'amount': 7, 'chance': 10000}]],
+             'duration': 160, 'eut': 16, 'fluidDurations': {'water': 160, 'lubricant': 80}},
+            {'inputItems': ['example:old_plate'], 'outputItems': ['example:old_foil'],
+             'inputFluids': [{'key': 'fluid.water', 'amount': 9}], 'duration': 200, 'eut': 16},
+        ]
+        (source / 'GTNEIDefaultHandler_fakecuttingsaw.json').write_bytes(encode_json({
+            'identifier': 'gt.recipe.fakecuttingsaw', 'recipes': recipes}))
+        split_all.do_recipes(False)
+        result = json.loads((self.version / 'Recipes' / handler / '0.json').read_bytes())['recipes']
+        self.assertEqual(result, [dict(recipe, index=f'0/{i}') for i, recipe in enumerate(recipes)])
+
+        names = {'水': ['fluid.water'], '润滑油': ['fluid.lubricant'], '箔': ['example:foil']}
+        routes = collect_handlers(names, {}, {}, self.version)
+        self.assertEqual(routes['usageHandlers']['水'], [handler])
+        self.assertEqual(routes['usageHandlers']['润滑油'], [handler])
+        self.assertEqual(routes['sourceHandlers']['箔'], [handler])
+        self.assertNotIn('润滑油', routes['sourceHandlers'])
 
     def test_raw_large_candidate_recipe_is_associated_before_any_published_write(self):
         nbt = '{value:"' + 'x' * 700 + '"}'
