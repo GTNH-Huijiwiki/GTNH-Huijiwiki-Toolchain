@@ -53,7 +53,7 @@ def _load_dotenv():
 
 _load_dotenv()
 
-BASE = os.environ.get("BASE_URL", "https://gtnh.huijiwiki.com/api.php")
+BASE = os.environ.get("BASE_URL", "http://gtnh.huijiwiki.com/api.php")
 AUTHKEY = os.environ.get("AUTHKEY", "")
 DUMPS_DIR, INVENTORY_DB, _, NEW_CSV = image_paths(os.path.dirname(os.path.abspath(__file__)))
 USERNAME = os.environ.get("BOT_USERNAME", "")

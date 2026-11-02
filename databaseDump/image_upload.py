@@ -55,7 +55,7 @@ _load_dotenv()
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DUMPS_DIR, INVENTORY_DB, ICONS_DIR, NEW_CSV = image_paths(os.path.dirname(os.path.abspath(__file__)))
 
-BASE = os.environ.get("BASE_URL", "https://gtnh.huijiwiki.com/api.php")
+BASE = os.environ.get("BASE_URL", "http://gtnh.huijiwiki.com/api.php")
 AUTHKEY = os.environ.get("AUTHKEY", "")
 USERNAME = os.environ.get("BOT_USERNAME", "")
 PASSWORD = os.environ.get("BOT_PASSWORD", "")

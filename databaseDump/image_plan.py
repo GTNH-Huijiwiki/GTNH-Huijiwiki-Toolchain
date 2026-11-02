@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import sqlite3
+from contextlib import closing
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -43,15 +45,16 @@ def registry_and_damage(raw):
     return raw, 0
 
 
-def build_plan(items, icon_records, icons_dir, name_redirects):
+def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=None):
     """items 使用原始 advitempanel 记录，key 为无 NBT 哈希的真实身份。"""
-    from item_names import canonical_file
+    from item_names import canonical_file, is_quest_placeholder
 
     icons_dir = Path(icons_dir)
     physical = {path.name for path in icons_dir.glob('*.png')}
     records = {row['shortKey']: row for row in icon_records}
     owners = defaultdict(set)
     candidates = defaultdict(dict)
+    placeholder_icons = set()
     for item in items:
         raw = item.get('key', '')
         registry, damage = registry_and_damage(raw)
@@ -59,6 +62,8 @@ def build_plan(items, icon_records, icons_dir, name_redirects):
             continue
         record = records.get(item.get('shortKey'), {})
         icon = record.get('iconName') or item.get('icon')
+        if icon and is_quest_placeholder(item):
+            placeholder_icons.add(icon)
         if icon not in physical:
             continue
         nbt = item.get('nbt')
@@ -77,32 +82,48 @@ def build_plan(items, icon_records, icons_dir, name_redirects):
     aliases = {}
     groups = []
     hashed = 0
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for (registry, role), variants in sorted(candidates.items()):
-            # 被不同注册物品共同使用的物理文件保持原状，避免跨物品合并。
-            variants = {icon: rank for icon, rank in variants.items() if len(owners[icon]) == 1}
-            if len(variants) < 2:
-                continue
-            by_hash = defaultdict(list)
-            names = sorted(variants, key=variants.get)
-            hashes = pool.map(pixel_hash, (icons_dir / icon for icon in names))
-            for icon, digest in zip(names, hashes):
-                by_hash[digest].append(icon)
-                hashed += 1
-                if hashed % 10000 == 0:
-                    print(f'Hashing item images: {hashed:,}', flush=True)
-            for digest, names in by_hash.items():
-                if len(names) < 2:
+    if cached_plan is not None:
+        # 上传流程只复用已有映射；空缓存也不会触发重新读取图片像素。
+        if cached_plan.get('schemaVersion') != 1:
+            raise ValueError('不支持的图片计划版本')
+        groups = list(cached_plan.get('groups', []))
+        aliases = dict(cached_plan.get('keyAliases', {}))
+        for group in groups:
+            for name in group['duplicates']:
+                target = group['target']
+                if name in aliases and aliases[name] != target:
+                    raise ValueError(f'已有 key 图片重定向冲突: {name}')
+                aliases[name] = target
+    else:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for (registry, role), variants in sorted(candidates.items()):
+                # 被不同注册物品共同使用的物理文件保持原状，避免跨物品合并。
+                variants = {icon: rank for icon, rank in variants.items() if len(owners[icon]) == 1}
+                if len(variants) < 2:
                     continue
-                target, *duplicates = names
-                aliases.update((name, target) for name in duplicates)
-                groups.append({'registry': registry, 'role': role, 'sha256': digest,
-                               'target': target, 'duplicates': duplicates})
+                by_hash = defaultdict(list)
+                names = sorted(variants, key=variants.get)
+                hashes = pool.map(pixel_hash, (icons_dir / icon for icon in names))
+                for icon, digest in zip(names, hashes):
+                    by_hash[digest].append(icon)
+                    hashed += 1
+                    if hashed % 10000 == 0:
+                        print(f'Hashing item images: {hashed:,}', flush=True)
+                for digest, names in by_hash.items():
+                    if len(names) < 2:
+                        continue
+                    target, *duplicates = names
+                    aliases.update((name, target) for name in duplicates)
+                    groups.append({'registry': registry, 'role': role, 'sha256': digest,
+                                   'target': target, 'duplicates': duplicates})
 
     uploads = physical - aliases.keys()
     redirects = {'File:' + canonical_file(name): target for name, target in aliases.items()}
     skipped_missing = {}
     for title, icon in name_redirects.items():
+        # 兼容旧 CSV：仅跳过占位物品的名称别名，保留上方生成的 key 图片重定向。
+        if icon in placeholder_icons:
+            continue
         title = 'File:' + canonical_file(title.removeprefix('File:'))
         if icon in OPTIONAL_CIRCUIT_ICONS and icon not in physical:
             skipped_missing[title] = icon
@@ -127,22 +148,42 @@ def build_plan(items, icon_records, icons_dir, name_redirects):
     return {'schemaVersion': 1, 'physicalCount': len(physical), 'hashedCount': hashed,
             'uploadCount': len(uploads), 'deduplicatedCount': len(aliases),
             'uploadIcons': sorted(uploads), 'redirects': dict(sorted(redirects.items())),
-            'groups': groups, 'skippedMissingRedirects': dict(sorted(skipped_missing.items()))}
+            'groups': groups, 'keyAliases': dict(sorted(aliases.items())), 'skippedMissingRedirects': dict(sorted(skipped_missing.items()))}
 
 
 def prepare_plan(source, resolved_csv):
-    """每次上传/创建重定向前重新计算当前图片，计划仅写入本地状态目录。"""
+    """复用本地 key 重定向，只刷新名称别名；上传前不重新计算图片 hash。"""
     from image_version import redirect_map
+    from item_names import canonical_file
 
     source = Path(source)
     redirects = redirect_map(resolved_csv)
     # 名称映射已校验该文件的哈希；独立模组可能使用完整 dumps 的关联图标数据。
     report = json.loads(Path(resolved_csv).with_name('image-name-resolution.json').read_text('utf-8'))
+    plan_path = Path(resolved_csv).with_name('image-upload-plan.json')
+    cached = (json.loads(plan_path.read_text('utf-8')) if plan_path.exists()
+              else {'schemaVersion': 1, 'groups': []})
+    if not cached.get('groups') and not cached.get('keyAliases'):
+        # 兼容曾被空去重结果覆盖的计划，从同一来源的上传状态库恢复 key 别名。
+        # GTNH 状态库沿用脚本根目录，其余模组位于各自的版本状态目录。
+        state_dir = plan_path.parent
+        database = (Path(__file__).parent / 'image_inventory.db'
+                    if state_dir.parent.name == 'GTNH' else state_dir / 'image_inventory.db')
+        if database.is_file():
+            filenames = {'File:' + canonical_file(path.name): path.name
+                         for path in (source / 'icons').glob('*.png')}
+            with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as conn:
+                if conn.execute("SELECT 1 FROM sqlite_master WHERE name='redirects'").fetchone():
+                    cached['keyAliases'] = {
+                        filenames[title]: target for title, target in
+                        conn.execute('SELECT redirect_from, icon_name FROM redirects')
+                        if title in filenames and filenames[title] != target}
+                    print(f"Reused {len(cached['keyAliases']):,} key redirects from local image state")
     plan = build_plan(
         json.loads((source / 'advitempanel.json').read_text('utf-8'))['shortKey'],
         json.loads(Path(report['sourceIconsPath']).read_text('utf-8'))['shortKey'],
-        source / 'icons', redirects)
-    Path(resolved_csv).with_name('image-upload-plan.json').write_text(
+        source / 'icons', redirects, cached_plan=cached)
+    plan_path.write_text(
         json.dumps(plan, ensure_ascii=False, indent=2), 'utf-8')
     print(f"Image plan: {plan['physicalCount']:,} files; "
           f"{plan['deduplicatedCount']:,} duplicates; {plan['uploadCount']:,} physical uploads")

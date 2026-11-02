@@ -42,7 +42,7 @@ def _load_dotenv():
 
 _load_dotenv()
 
-BASE = os.environ.get("BASE_URL", "https://gtnh.huijiwiki.com/api.php")
+BASE = os.environ.get("BASE_URL", "http://gtnh.huijiwiki.com/api.php")
 AUTHKEY = os.environ.get("AUTHKEY", "")
 USERNAME = os.environ.get("EDITOR_USERNAME", "")
 PASSWORD = os.environ.get("EDITOR_PASSWORD", "")

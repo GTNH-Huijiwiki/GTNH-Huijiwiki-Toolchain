@@ -16,6 +16,24 @@ from routing_hash import bucket_id, short_hash
 
 
 class NameRoutingTests(unittest.TestCase):
+    def test_quest_placeholders_keep_name_index_without_image_names(self):
+        items = [
+            {'key': 'betterquesting:pattern_placeholder_hash',
+             'rawKey': 'betterquesting:pattern_placeholder',
+             'translatedName': '铁锭', 'iconName': 'fake.png'},
+            {'key': 'betterquesting:placeholder:1_hash',
+             'translatedName': '占位符', 'iconName': 'placeholder.png'},
+            {'key': 'minecraft:iron_ingot', 'translatedName': '铁锭', 'iconName': 'iron.png'},
+            {'key': 'betterquesting:guide_book', 'translatedName': '任务指南', 'iconName': 'book.png'},
+        ]
+        names, groups = collect_names(items)
+        self.assertIn(items[0]['key'], names['铁锭'])
+        self.assertIn(items[1]['key'], names['占位符'])
+        redirects, unresolved, invalid = resolve_images(groups, {}, items=items)
+        self.assertEqual(redirects, {'File:铁锭.png': 'File:iron.png',
+                                     'File:任务指南.png': 'File:book.png'})
+        self.assertFalse(unresolved or invalid)
+
     def test_custom_circuits_are_injected_for_all_sources(self):
         from split_all import _inject_custom_items
         original = {'key': 'programmablehatches:example'}
