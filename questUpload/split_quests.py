@@ -130,7 +130,10 @@ def localize(record, kind, translations, missing):
             key = f"betterquesting.{kind}.{identifier}.{field}"
             if key not in translations:
                 missing.append(key)
+            original_field = "originalName" if field == "name" else "originalDesc"
+            properties[original_field] = original
             properties[field] = translations.get(key, original).replace("%n", "\n")
+        record["properties"]["betterquesting"] = dict(sorted(properties.items()))
     except (KeyError, TypeError) as exc:
         raise ValueError(f"任务记录缺少 ID 或 properties.betterquesting.name/desc: {record.get(id_field)}") from exc
 
