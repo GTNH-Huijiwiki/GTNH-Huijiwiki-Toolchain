@@ -9,6 +9,11 @@ from pathlib import Path
 from PIL import Image
 
 
+# 预处理固定注入的编程电路条目保留在 Items 中，但不要求每份导出附带这些图片。
+OPTIONAL_CIRCUIT_ICONS = frozenset(
+    f'icon_gregtech_gt.integrated_circuit_{i}.png' for i in range(1, 25))
+
+
 def pixel_hash(path):
     """比较完整 RGBA 像素和尺寸；APNG 同时比较完整帧及播放时序。"""
     with Image.open(path) as image:
@@ -96,23 +101,33 @@ def build_plan(items, icon_records, icons_dir, name_redirects):
 
     uploads = physical - aliases.keys()
     redirects = {'File:' + canonical_file(name): target for name, target in aliases.items()}
+    skipped_missing = {}
     for title, icon in name_redirects.items():
         title = 'File:' + canonical_file(title.removeprefix('File:'))
+        if icon in OPTIONAL_CIRCUIT_ICONS and icon not in physical:
+            skipped_missing[title] = icon
+            continue
         target = aliases.get(icon, icon)
         if title == 'File:' + canonical_file(target):
             continue
         if title in redirects and redirects[title] != target:
             raise ValueError(f'中文名与物品图片重定向冲突: {title}')
         redirects[title] = target
-    if set(redirects.values()) - uploads:
-        raise ValueError('重定向目标必须为当前实体图片')
+    missing = set(redirects.values()) - uploads
+    if missing:
+        mappings = sorted((title, target) for title, target in redirects.items() if target in missing)
+        examples = '; '.join(f'{title} -> {target}' for title, target in mappings[:10])
+        raise ValueError(
+            f'重定向目标必须为当前实体图片：缺少 {len(missing)} 个目标，图片目录 {icons_dir}。'
+            f'请检查数据源范围和图片导出，并重新运行 split_all.py items。'
+            f'缺失映射（最多显示 10 条）：{examples}')
     target_titles = {'File:' + canonical_file(icon) for icon in redirects.values()}
     if target_titles & redirects.keys():
         raise ValueError('图片计划包含二级重定向或标题冲突')
     return {'schemaVersion': 1, 'physicalCount': len(physical), 'hashedCount': hashed,
             'uploadCount': len(uploads), 'deduplicatedCount': len(aliases),
             'uploadIcons': sorted(uploads), 'redirects': dict(sorted(redirects.items())),
-            'groups': groups}
+            'groups': groups, 'skippedMissingRedirects': dict(sorted(skipped_missing.items()))}
 
 
 def prepare_plan(source, resolved_csv):
@@ -131,4 +146,6 @@ def prepare_plan(source, resolved_csv):
         json.dumps(plan, ensure_ascii=False, indent=2), 'utf-8')
     print(f"Image plan: {plan['physicalCount']:,} files; "
           f"{plan['deduplicatedCount']:,} duplicates; {plan['uploadCount']:,} physical uploads")
+    if plan['skippedMissingRedirects']:
+        print(f"Skipped {len(plan['skippedMissingRedirects'])} circuit redirects: optional images absent")
     return plan

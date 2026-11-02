@@ -513,7 +513,7 @@ def _regress_nbt_only_items(items: list):
 # ============================================================
 
 def _inject_custom_items(items: list):
-    """在 item 列表末尾强行注入自定义条目（如编程电路各配置变体）。"""
+    """注入编程电路配置 1~24；对应图片允许在当前导出中缺失。"""
     n = len(items)
 
     # 编程电路 (gregtech:gt.integrated_circuit) — 配置 1~24
