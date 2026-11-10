@@ -1110,7 +1110,7 @@ def _dedupe_gtmaterial_by_localized_name(data: dict) -> int:
 
 
 def _extract_ore_rows_from_gtmaterial(data: dict) -> list[list[str]]:
-    """Build rows as [oreDict, tranlatedName] from gtmaterial ore entries."""
+    """Build rows as [oreDict, translatedName] from gtmaterial ore entries."""
     import re
 
     rows = []
@@ -1294,9 +1294,9 @@ def _write_ores_table_json(rows: list[list[str]]):
                     "title": {"en": "oreDict", "zh": "矿典"},
                 },
                 {
-                    "name": "tranlatedName",
+                    "name": "translatedName",
                     "type": "string",
-                    "title": {"en": "tranlatedName", "zh": "中文名"},
+                    "title": {"en": "translatedName", "zh": "中文名"},
                 },
                 {
                     "name": "oreTranslatedName",
