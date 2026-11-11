@@ -101,8 +101,19 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 
 记录保持导出器的原字段，按分类、列、行排序。每页严格不超过 2,000,000 字节。
 研究的范围划分与 `Tc4research` 相同：`GTNH` 排除 `addon-mods.json` 中的附属，附属按 `sourceMod` 选择；
-分类只保留仍有研究的。魔导手册的贴图不由本工具处理，物品与研究的关联由线上 Lua 根据配方数据完成。
+分类只保留仍有研究的。物品与研究的关联由线上 Lua 根据配方数据完成，本工具不做。
 默认任务会包含它，也可单独运行；输入文件缺失或为空时跳过。`Tc4research` 保持不变。
+研究的 `Category` 是本地化分类名（与 `Tc4research` 相同），`CategoryKey` 是分类 key，对应分类记录的 `Key`。
+
+**贴图**不由本工具处理，已由维基一次性上传，Dumper 导出的 `tc4thaumonomicon-assets/` 不进工具链。
+数据里的贴图用 `域名:路径` 标识（如 `thaumcraft:textures/gui/gui_researchback.png`，
+文字里的 `<IMG>` 标记也是这个格式），对应维基文件：
+
+`File:Thaumonomicon-Asset-<域名>-<去掉 textures/ 的路径，斜杠换成短横>.<扩展名>`
+
+扩展名规则：分类的 `Background` 字段指向的背景图是 `.webp`（有损），其余贴图保持原样的 `.png`。
+例如 `thaumcraft:textures/items/alumentum.png` 对应 `Thaumonomicon-Asset-thaumcraft-items-alumentum.png`。
+研究图标若是物品（`Icon` 字段），用物品图标，不在此列。
 
 ## 神秘时代研究表
 

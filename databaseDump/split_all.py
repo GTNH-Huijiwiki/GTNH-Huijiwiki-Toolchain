@@ -1,6 +1,6 @@
 """
 split_all.py
-Unified splitter for Items / Fluids / OreDictionary / Recipes / Research.
+Unified splitter for Items / Fluids / OreDictionary / Recipes / Research / Thaumonomicon.
 
 Usage:
     python split_all.py                    # all tasks
@@ -1429,7 +1429,9 @@ def do_tc4research(debug: bool):
     print(f"  [Tc4research] {len(records):,} researches -> {len(written)} file(s)")
 
 
-# 魔导手册各段：(输出子目录, 导出文件中的段名, 页内数组字段)。贴图不进工具链，由维基一次性上传。
+# 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
+# 页内数组字段名是线上 Lua 做 $unwind 时使用的名字，改动会破坏查询，需与 Lua 同步。
+# 魔导手册的贴图不由本工具处理，已一次性上传到 File:Thaumonomicon-Asset-*，命名规则见 README。
 THAUMONOMICON_SECTIONS = (
     ("Categories", "categories", "tc4ThaumonomiconCategories"),
     ("Aspects", "aspects", "tc4Aspects"),
@@ -1440,13 +1442,22 @@ THAUMONOMICON_SECTIONS = (
 def do_thaumonomicon(debug: bool):
     """tc4thaumonomicon.json -> Thaumonomicon/{Categories,Aspects,Researches}/N.json
 
+    输入是 Dumper 的「TC4 Thaumonomicon」导出，顶层 categories / aspects / researches 三段，
+    每段是以分类 key、要素 tag、研究 key 为键的映射。输出把每段展开成记录数组并分页：
     每个子目录是数字分页，页内一个顶层数组（与 Tc4research 相同，便于线上 Lua 用 $unwind 查询）。
-    研究的范围划分与 do_tc4research 相同；分类只保留仍有研究的；要素只属于 GTNH。
+    记录原样保留导出器的字段，不做改写；顺序沿用导出（研究按分类、列、行排序）。
+
+    范围划分与 do_tc4research 相同，每次只处理 .env 选择的一个模组：
+    - GTNH：排除 addon-mods.json 里的附属，缺少 sourceMod 的旧记录保留；
+    - 附属：优先读自己的 filtered 目录；没有时从完整导出按 sourceMod 精确选择。
+    分类只保留仍有研究的（附属的分类不会带上基础包分类）；要素没有归属，只属于 GTNH。
+    输入缺失或为空时跳过。与 Tc4research 互不影响，线上两者并存。
     """
     source = Path(DUMPS_DIR) / "tc4thaumonomicon.json"
     mod = local_mod_name()
     select_owner = False
     if not source.is_file() or not source.stat().st_size:
+        # 附属没有自己的导出时，从完整导出里挑。GTNH 自己缺文件就是缺输入，不借用别处。
         source = Path(REFERENCE_DUMPS_DIR) / "tc4thaumonomicon.json"
         if not mod or mod == "GTNH" or not source.is_file() or not source.stat().st_size:
             print(f"跳过缺失或空的魔导手册输入: {Path(DUMPS_DIR) / 'tc4thaumonomicon.json'}")
@@ -1463,6 +1474,7 @@ def do_thaumonomicon(debug: bool):
             return
         researches = [row for row in researches if (row.get("sourceMod") or "").casefold() == mod.casefold()]
         print(f"  [Thaumonomicon] {mod}: selected {len(researches)} by sourceMod")
+    # Category 是本地化分类名（与 Tc4research 一致），CategoryKey 才是分类的 key，与 categories 的键对应。
     used = {row.get("CategoryKey") for row in researches}
     rows = {
         "categories": [row for row in data.get("categories", {}).values() if row.get("Key") in used],
@@ -1472,12 +1484,14 @@ def do_thaumonomicon(debug: bool):
     for folder, section, field in THAUMONOMICON_SECTIONS:
         output = Path(VERSION) / "Thaumonomicon" / folder
         written = []
+        # 按最终 UTF-8 字节分页；单条研究含全部页面，仍远小于上限，超限会直接报错而不是截断。
         for part, content in enumerate(array_pages(rows[section], {}, field, DEFAULT_MAX_BYTES)):
             path = output / f"{part}.json"
             write_bounded(path, content, HARD_MAX_BYTES)
             written.append(path)
             if debug and len(written) == 5:
                 break
+        # 清掉数据变少后遗留的旧分页；只动数字命名的 json，不碰其他文件。
         if output.is_dir() and not debug:
             clear_generated_pages(output, {".json"}, keep=written)
         print(f"  [Thaumonomicon/{folder}] {len(rows[section]):,} records -> {len(written)} file(s)")
