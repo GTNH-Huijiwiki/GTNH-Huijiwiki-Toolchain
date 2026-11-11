@@ -9,6 +9,7 @@ Usage:
     python split_all.py oredict            # OreDictionary only (requires generated Items)
     python split_all.py recipes            # Recipes only
     python split_all.py tc4research        # Thaumcraft research only
+    python split_all.py thaumonomicon      # Thaumonomicon (categories, aspects, researches with pages)
     python split_all.py items fluids       # multiple
     python split_all.py --debug            # debug mode (limit output)
 """
@@ -1428,6 +1429,60 @@ def do_tc4research(debug: bool):
     print(f"  [Tc4research] {len(records):,} researches -> {len(written)} file(s)")
 
 
+# 魔导手册各段：(输出子目录, 导出文件中的段名, 页内数组字段)。贴图不进工具链，由维基一次性上传。
+THAUMONOMICON_SECTIONS = (
+    ("Categories", "categories", "tc4ThaumonomiconCategories"),
+    ("Aspects", "aspects", "tc4Aspects"),
+    ("Researches", "researches", "tc4ThaumonomiconResearches"),
+)
+
+
+def do_thaumonomicon(debug: bool):
+    """tc4thaumonomicon.json -> Thaumonomicon/{Categories,Aspects,Researches}/N.json
+
+    每个子目录是数字分页，页内一个顶层数组（与 Tc4research 相同，便于线上 Lua 用 $unwind 查询）。
+    研究的范围划分与 do_tc4research 相同；分类只保留仍有研究的；要素只属于 GTNH。
+    """
+    source = Path(DUMPS_DIR) / "tc4thaumonomicon.json"
+    mod = local_mod_name()
+    select_owner = False
+    if not source.is_file() or not source.stat().st_size:
+        source = Path(REFERENCE_DUMPS_DIR) / "tc4thaumonomicon.json"
+        if not mod or mod == "GTNH" or not source.is_file() or not source.stat().st_size:
+            print(f"跳过缺失或空的魔导手册输入: {Path(DUMPS_DIR) / 'tc4thaumonomicon.json'}")
+            return
+        select_owner = True
+    data = json.loads(source.read_text(encoding="utf-8"))
+    researches = list(data.get("researches", {}).values())
+    if mod == "GTNH":
+        excluded = addon_mods()
+        researches = [row for row in researches if (row.get("sourceMod") or "").casefold() not in excluded]
+    elif select_owner:
+        if researches and not any(row.get("sourceMod") for row in researches):
+            print(f"跳过 {mod} 魔导手册：完整导出尚未记录 sourceMod")
+            return
+        researches = [row for row in researches if (row.get("sourceMod") or "").casefold() == mod.casefold()]
+        print(f"  [Thaumonomicon] {mod}: selected {len(researches)} by sourceMod")
+    used = {row.get("CategoryKey") for row in researches}
+    rows = {
+        "categories": [row for row in data.get("categories", {}).values() if row.get("Key") in used],
+        "aspects": list(data.get("aspects", {}).values()) if mod == "GTNH" else [],
+        "researches": researches,
+    }
+    for folder, section, field in THAUMONOMICON_SECTIONS:
+        output = Path(VERSION) / "Thaumonomicon" / folder
+        written = []
+        for part, content in enumerate(array_pages(rows[section], {}, field, DEFAULT_MAX_BYTES)):
+            path = output / f"{part}.json"
+            write_bounded(path, content, HARD_MAX_BYTES)
+            written.append(path)
+            if debug and len(written) == 5:
+                break
+        if output.is_dir() and not debug:
+            clear_generated_pages(output, {".json"}, keep=written)
+        print(f"  [Thaumonomicon/{folder}] {len(rows[section]):,} records -> {len(written)} file(s)")
+
+
 def _fix_recipe_format(recipes: list, filepath: str) -> list:
     """修正非标准 NEI recipe 格式为标准格式。
     如果配方已经是标准格式（有 outputFluids / inputFluids / outputItems），
@@ -1834,6 +1889,7 @@ TASKS = {
     "gtmaterial": ("GtMaterial",   do_gtmaterial),
     "ticmaterial":("TicMaterial",  do_ticmaterial),
     "tc4research":("Tc4research", do_tc4research),
+    "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
 }
 
 STANDALONE_TASKS = {
@@ -1906,7 +1962,7 @@ def configure_source(require_source: bool = True):
     if require_source and not Path(DUMPS_DIR).is_dir():
         raise ValueError(
             f"数据源目录不存在: {DUMPS_DIR}。"
-            "仅处理研究时可运行 python split_all.py tc4research，从完整导出按来源提取。"
+            "仅处理研究时可运行 python split_all.py tc4research 或 thaumonomicon，从完整导出按来源提取。"
         )
     VERSION = os.path.join(_PROJECT_ROOT, "wikitext", "Data", "Versions", mod, version)
     # NBT 判断依赖当前模组的配方，不能复用其他模组的扫描缓存。
@@ -1929,7 +1985,7 @@ def main():
             print(f"Unknown task(s): {unknown}")
             print(f"Available: {', '.join(all_tasks.keys())}")
             return
-    configure_source(require_source=any(key != "tc4research" for key in tasks_to_run))
+    configure_source(require_source=any(key not in ("tc4research", "thaumonomicon") for key in tasks_to_run))
     if debug:
         print("[DEBUG mode]\n")
     if tabx:

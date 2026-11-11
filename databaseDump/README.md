@@ -87,6 +87,23 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 `oredictionary-associations.json` 报告。Items 生成成功后才可单独运行 `python split_all.py oredict`；
 物品数据变化后应先重新生成 Items。默认的 `python split_all.py` 已按 Items、矿辞的顺序执行。
 
+## 魔导手册（Thaumonomicon）
+
+`python split_all.py thaumonomicon` 读取 GTNH-Dumper 的 `tc4thaumonomicon.json`，写到
+`Data:Versions/<远端模组名>/<版本>/Thaumonomicon/` 下三个子目录，每个都是数字分页
+（`0.json`、`1.json`…），页内是一个顶层数组，线上 Lua 可像 `Tc4research` 一样用 `$unwind` 查询：
+
+| 子目录 | 页内数组 | 内容 |
+|---|---|---|
+| `Categories/` | `tc4ThaumonomiconCategories` | 分类：名称、图标、背景、网格范围 |
+| `Aspects/` | `tc4Aspects` | 要素：颜色、合成组件、图标（仅 `MOD_LOCAL_NAME=GTNH`） |
+| `Researches/` | `tc4ThaumonomiconResearches` | 研究：坐标、依赖、要素消耗、图标、全部页面 |
+
+记录保持导出器的原字段，按分类、列、行排序。每页严格不超过 2,000,000 字节。
+研究的范围划分与 `Tc4research` 相同：`GTNH` 排除 `addon-mods.json` 中的附属，附属按 `sourceMod` 选择；
+分类只保留仍有研究的。魔导手册的贴图不由本工具处理，物品与研究的关联由线上 Lua 根据配方数据完成。
+默认任务会包含它，也可单独运行；输入文件缺失或为空时跳过。`Tc4research` 保持不变。
+
 ## 神秘时代研究表
 
 默认拆分任务包含研究表，也可单独运行 `python split_all.py tc4research`。
