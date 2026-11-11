@@ -1,6 +1,6 @@
 """
 split_all.py
-Unified splitter for Items / Fluids / OreDictionary / Recipes / Research.
+Unified splitter for Items / Fluids / OreDictionary / Recipes / Research / Thaumonomicon.
 
 Usage:
     python split_all.py                    # all tasks
@@ -9,6 +9,7 @@ Usage:
     python split_all.py oredict            # OreDictionary only (requires generated Items)
     python split_all.py recipes            # Recipes only
     python split_all.py tc4research        # Thaumcraft research only
+    python split_all.py thaumonomicon      # Thaumonomicon (categories, aspects, researches with pages)
     python split_all.py items fluids       # multiple
     python split_all.py --debug            # debug mode (limit output)
 """
@@ -1428,6 +1429,74 @@ def do_tc4research(debug: bool):
     print(f"  [Tc4research] {len(records):,} researches -> {len(written)} file(s)")
 
 
+# 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
+# 页内数组字段名是线上 Lua 做 $unwind 时使用的名字，改动会破坏查询，需与 Lua 同步。
+# 魔导手册的贴图不由本工具处理，已一次性上传到 File:Thaumonomicon-Asset-*，命名规则见 README。
+THAUMONOMICON_SECTIONS = (
+    ("Categories", "categories", "tc4ThaumonomiconCategories"),
+    ("Aspects", "aspects", "tc4Aspects"),
+    ("Researches", "researches", "tc4ThaumonomiconResearches"),
+)
+
+
+def do_thaumonomicon(debug: bool):
+    """tc4thaumonomicon.json -> Thaumonomicon/{Categories,Aspects,Researches}/N.json
+
+    输入是 Dumper 的「TC4 Thaumonomicon」导出，顶层 categories / aspects / researches 三段，
+    每段是以分类 key、要素 tag、研究 key 为键的映射。输出把每段展开成记录数组并分页：
+    每个子目录是数字分页，页内一个顶层数组（与 Tc4research 相同，便于线上 Lua 用 $unwind 查询）。
+    记录原样保留导出器的字段，不做改写；顺序沿用导出（研究按分类、列、行排序）。
+
+    范围划分与 do_tc4research 相同，每次只处理 .env 选择的一个模组：
+    - GTNH：排除 addon-mods.json 里的附属，缺少 sourceMod 的旧记录保留；
+    - 附属：优先读自己的 filtered 目录；没有时从完整导出按 sourceMod 精确选择。
+    分类只保留仍有研究的（附属的分类不会带上基础包分类）；要素没有归属，只属于 GTNH。
+    输入缺失或为空时跳过。与 Tc4research 互不影响，线上两者并存。
+    """
+    source = Path(DUMPS_DIR) / "tc4thaumonomicon.json"
+    mod = local_mod_name()
+    select_owner = False
+    if not source.is_file() or not source.stat().st_size:
+        # 附属没有自己的导出时，从完整导出里挑。GTNH 自己缺文件就是缺输入，不借用别处。
+        source = Path(REFERENCE_DUMPS_DIR) / "tc4thaumonomicon.json"
+        if not mod or mod == "GTNH" or not source.is_file() or not source.stat().st_size:
+            print(f"跳过缺失或空的魔导手册输入: {Path(DUMPS_DIR) / 'tc4thaumonomicon.json'}")
+            return
+        select_owner = True
+    data = json.loads(source.read_text(encoding="utf-8"))
+    researches = list(data.get("researches", {}).values())
+    if mod == "GTNH":
+        excluded = addon_mods()
+        researches = [row for row in researches if (row.get("sourceMod") or "").casefold() not in excluded]
+    elif select_owner:
+        if researches and not any(row.get("sourceMod") for row in researches):
+            print(f"跳过 {mod} 魔导手册：完整导出尚未记录 sourceMod")
+            return
+        researches = [row for row in researches if (row.get("sourceMod") or "").casefold() == mod.casefold()]
+        print(f"  [Thaumonomicon] {mod}: selected {len(researches)} by sourceMod")
+    # Category 是本地化分类名（与 Tc4research 一致），CategoryKey 才是分类的 key，与 categories 的键对应。
+    used = {row.get("CategoryKey") for row in researches}
+    rows = {
+        "categories": [row for row in data.get("categories", {}).values() if row.get("Key") in used],
+        "aspects": list(data.get("aspects", {}).values()) if mod == "GTNH" else [],
+        "researches": researches,
+    }
+    for folder, section, field in THAUMONOMICON_SECTIONS:
+        output = Path(VERSION) / "Thaumonomicon" / folder
+        written = []
+        # 按最终 UTF-8 字节分页；单条研究含全部页面，仍远小于上限，超限会直接报错而不是截断。
+        for part, content in enumerate(array_pages(rows[section], {}, field, DEFAULT_MAX_BYTES)):
+            path = output / f"{part}.json"
+            write_bounded(path, content, HARD_MAX_BYTES)
+            written.append(path)
+            if debug and len(written) == 5:
+                break
+        # 清掉数据变少后遗留的旧分页；只动数字命名的 json，不碰其他文件。
+        if output.is_dir() and not debug:
+            clear_generated_pages(output, {".json"}, keep=written)
+        print(f"  [Thaumonomicon/{folder}] {len(rows[section]):,} records -> {len(written)} file(s)")
+
+
 def _fix_recipe_format(recipes: list, filepath: str) -> list:
     """修正非标准 NEI recipe 格式为标准格式。
     如果配方已经是标准格式（有 outputFluids / inputFluids / outputItems），
@@ -1834,6 +1903,7 @@ TASKS = {
     "gtmaterial": ("GtMaterial",   do_gtmaterial),
     "ticmaterial":("TicMaterial",  do_ticmaterial),
     "tc4research":("Tc4research", do_tc4research),
+    "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
 }
 
 STANDALONE_TASKS = {
@@ -1906,7 +1976,7 @@ def configure_source(require_source: bool = True):
     if require_source and not Path(DUMPS_DIR).is_dir():
         raise ValueError(
             f"数据源目录不存在: {DUMPS_DIR}。"
-            "仅处理研究时可运行 python split_all.py tc4research，从完整导出按来源提取。"
+            "仅处理研究时可运行 python split_all.py tc4research 或 thaumonomicon，从完整导出按来源提取。"
         )
     VERSION = os.path.join(_PROJECT_ROOT, "wikitext", "Data", "Versions", mod, version)
     # NBT 判断依赖当前模组的配方，不能复用其他模组的扫描缓存。
@@ -1929,7 +1999,7 @@ def main():
             print(f"Unknown task(s): {unknown}")
             print(f"Available: {', '.join(all_tasks.keys())}")
             return
-    configure_source(require_source=any(key != "tc4research" for key in tasks_to_run))
+    configure_source(require_source=any(key not in ("tc4research", "thaumonomicon") for key in tasks_to_run))
     if debug:
         print("[DEBUG mode]\n")
     if tabx:
