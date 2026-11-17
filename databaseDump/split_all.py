@@ -22,6 +22,7 @@ from pathlib import Path
 from data_version import addon_mods, local_mod_name, source_directory, version_module_title, version_tag
 from item_names import build_artifacts, image_name_config, read_items, write_item_name_index
 from nbt_identity import nbt_identity
+from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
 
@@ -1279,7 +1280,7 @@ def _append_ore_dict_short_patterns(rows: list[list[str]]) -> list[list[str]]:
     return result
 
 
-def _write_ores_table_json(rows: list[list[str]]):
+def _write_ores_table_json(rows):
     """Write ore helper data in tabx-style schema to Ores/0.tabx."""
     output_dir = os.path.join(VERSION, "Ores")
     os.makedirs(output_dir, exist_ok=True)
@@ -1322,6 +1323,7 @@ def _write_ores_table_json(rows: list[list[str]]):
         },
         "data": rows,
     }
+    payload["schema"]["fields"].extend(ORE_PROCESSING_FIELDS)
 
     out_path = os.path.join(output_dir, "0.tabx")
     size = write_version_json(out_path, payload)
@@ -1373,6 +1375,10 @@ def do_gtmaterial(debug: bool):
     ore_rows = _append_missing_hee_ore_rows(ore_rows, oredict_map, item_display_map)
     ore_rows = _enrich_ore_rows(ore_rows, oredict_map, item_display_map)
     ore_rows = _append_ore_dict_short_patterns(ore_rows)
+    ore_rows = append_flags(
+        ore_rows, data, oredict_map,
+        read_recipe_documents(Path(REFERENCE_DUMPS_DIR) / "recipes", Path(DUMPS_DIR) / "recipes"),
+    )
     _write_ores_table_json(ore_rows)
 
     _split_flat_dict_impl(data, os.path.join(VERSION, "Gtmaterial"), debug)
