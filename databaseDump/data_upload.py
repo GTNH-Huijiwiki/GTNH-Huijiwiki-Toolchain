@@ -54,7 +54,9 @@ _load_dotenv()
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-BASE = os.environ.get("BASE_URL", "http://gtnh.huijiwiki.com/api.php")
+BASE = os.environ.get("BASE_URL", "https://gtnh.huijiwiki.com/api.php")
+if BASE == "http://gtnh.huijiwiki.com/api.php":
+    BASE = "https://gtnh.huijiwiki.com/api.php"
 AUTHKEY = os.environ.get("AUTHKEY", "")
 WIKITEXT_DIR = os.path.join(_PROJECT_ROOT, "wikitext")
 TASK_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wiki_inventory.db")
