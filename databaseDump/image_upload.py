@@ -23,7 +23,9 @@ import urllib.parse
 import http.cookiejar
 from image_version import image_paths, require_source
 from image_plan import prepare_plan
-from image_state import update_state
+from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy
+from item_names import canonical_file
+import hashlib
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
@@ -70,7 +72,19 @@ def get_pending_icons(plan=None) -> list[str]:
     if plan is None:
         plan = prepare_plan(DUMPS_DIR, NEW_CSV)
     current_icons = set(plan['uploadIcons'])
-    update_state(INVENTORY_DB, current_icons, plan['redirects'])
+    update_state(INVENTORY_DB, current_icons, plan['redirects'], icon_hashes(ICONS_DIR, current_icons))
+    with closing(sqlite3.connect(INVENTORY_DB)) as conn:
+        legacy = [r[0] for r in conn.execute("SELECT icon_name FROM images WHERE icon_state='待核验'")
+                  if r[0] in current_icons]
+    # Verify legacy upload records that have no stored hash.
+    opener = _make_opener()
+    for offset in range(0, len(legacy), 50):
+        batch = legacy[offset:offset + 50]
+        data = _post_form(opener, dict(action='query', titles='|'.join('File:'+n for n in batch),
+                                      prop='imageinfo', iiprop='sha1', format='json'))
+        pages = {canonical_file(p['title'].split(':',1)[1]): p for p in data['query']['pages'].values()}
+        reconcile_legacy(INVENTORY_DB, {n: pages.get(canonical_file(n), {}).get('imageinfo', [{}])[0].get('sha1')
+                                      for n in batch})
     with closing(sqlite3.connect(INVENTORY_DB)) as conn:
         rows = conn.execute(
             "SELECT DISTINCT icon_name FROM images "
@@ -80,14 +94,8 @@ def get_pending_icons(plan=None) -> list[str]:
     return [r[0] for r in rows if r[0] in current_icons]
 
 
-def mark_icon_done(icon_name: str):
-    """图标上传成功 → 该图标所有行的 icon_state = 已上传"""
-    with closing(sqlite3.connect(INVENTORY_DB)) as conn:
-        conn.execute(
-            "UPDATE images SET icon_state='已上传' WHERE icon_name=?",
-            (icon_name,)
-        )
-        conn.commit()
+def mark_icon_done(icon_name: str, sha1: str):
+    mark_uploaded(INVENTORY_DB, icon_name, sha1)
 
 
 # ── HTTP ─────────────────────────────────────────────────────
@@ -125,7 +133,7 @@ def login_once(username: str, password: str) -> http.cookiejar.CookieJar:
     })
     if r["login"]["result"] != "Success":
         raise RuntimeError(f"Login failed: {r['login'].get('reason', r['login']['result'])}")
-    print(f"Logged in as: {r['login']['lgusername']}")
+    print("Bot login succeeded")
     return jar
 
 
@@ -183,7 +191,9 @@ def upload_one(opener, path: str, bot: bool = True) -> dict:
             if "Invalid CSRF" in err and attempt == 0:
                 continue
             raise RuntimeError(err)
-        return r["upload"]
+        result = r["upload"]
+        result["_payload_sha1"] = hashlib.sha1(file_data).hexdigest()
+        return result
 
     raise RuntimeError("CSRF retry exhausted")
 
@@ -213,7 +223,7 @@ def worker(icon_list: list, total: int, counters: dict, lock: threading.Lock,
                 status, msg = "OK", ""
             else:
                 raise RuntimeError(f"上传未成功: {result.get('result', '?')}")
-            mark_icon_done(icon_name)  # wiki 已接受 = 已上传
+            mark_icon_done(icon_name, result["_payload_sha1"])
         except Exception as e:
             # duplicate 可能指向另一文件名，不能据此认定目标图片已经可用。
             status, msg = "FAIL", str(e)

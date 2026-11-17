@@ -1,5 +1,6 @@
 """本地上传状态：图片与中文别名分表，允许多个别名指向同一图片。"""
 
+import hashlib
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -28,12 +29,42 @@ def init_db(path):
         else:
             conn.execute("CREATE TABLE IF NOT EXISTS images (icon_name TEXT PRIMARY KEY, icon_state TEXT NOT NULL)")
 
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(images)")}
+        for column in ("content_sha1", "uploaded_sha1"):
+            if column not in columns:
+                conn.execute(f"ALTER TABLE images ADD COLUMN {column} TEXT")
 
-def update_state(path, icons, redirects):
+
+def icon_hashes(directory, icons):
+    return {name: hashlib.sha1((Path(directory) / name).read_bytes()).hexdigest() for name in icons}
+
+
+def mark_uploaded(path, name, sha1):
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute("UPDATE images SET uploaded_sha1=?, icon_state="
+                     "CASE WHEN content_sha1=? THEN '已上传' ELSE '待更新' END WHERE icon_name=?",
+                     (sha1, sha1, name))
+
+
+def reconcile_legacy(path, live_hashes):
+    with closing(sqlite3.connect(path)) as conn, conn:
+        for name, sha1 in live_hashes.items():
+            conn.execute("UPDATE images SET uploaded_sha1=?, icon_state="
+                         "CASE WHEN content_sha1=? THEN '已上传' ELSE '待更新' END "
+                         "WHERE icon_name=? AND icon_state='待核验'", (sha1, sha1, name))
+
+
+def update_state(path, icons, redirects, hashes=None):
     init_db(path)
     with closing(sqlite3.connect(path)) as conn, conn:
         for icon in sorted(icons):
-            conn.execute("INSERT OR IGNORE INTO images VALUES (?, '待更新')", (icon,))
+            conn.execute("INSERT OR IGNORE INTO images (icon_name,icon_state) VALUES (?, '待更新')", (icon,))
+        if hashes is not None:
+            for icon, sha1 in hashes.items():
+                conn.execute("UPDATE images SET content_sha1=?, icon_state=CASE "
+                             "WHEN uploaded_sha1=? THEN '已上传' "
+                             "WHEN uploaded_sha1 IS NULL AND icon_state IN ('已上传','待核验') THEN '待核验' "
+                             "ELSE '待更新' END WHERE icon_name=?", (sha1, sha1, icon))
         for title, icon in sorted(redirects.items()):
             if icon not in icons:
                 raise ValueError(f"中文图片名指向缺失图片: {title} -> {icon}")

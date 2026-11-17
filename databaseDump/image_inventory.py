@@ -6,7 +6,7 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
-from image_state import init_db as initialize_state, update_state
+from image_state import init_db as initialize_state, update_state, icon_hashes
 from image_plan import prepare_plan
 from image_version import image_paths, require_source
 
@@ -52,7 +52,7 @@ def update_inventory():
     plan = prepare_plan(DUMPS_DIR, NEW_CSV)
     redirects = plan['redirects']
     icons = set(plan['uploadIcons'])
-    update_state(DB_PATH, icons, redirects)
+    update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons))
     print(f"Current icons: {len(icons):,}; current redirects: {len(redirects):,}")
     stats()
 
