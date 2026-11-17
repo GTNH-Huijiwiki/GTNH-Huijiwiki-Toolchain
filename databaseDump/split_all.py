@@ -22,6 +22,7 @@ from pathlib import Path
 from data_version import addon_mods, local_mod_name, source_directory, version_module_title, version_tag
 from item_names import build_artifacts, image_name_config, read_items, write_item_name_index
 from nbt_identity import nbt_identity
+from item_exclusions import load_policy
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
@@ -690,6 +691,16 @@ def _merge_fluid_data(items: list, fluid_map: dict):
     print(f"  Fluid-merged {merged} items (shortKey/key rewritten to fluid.key).")
 
 
+_EXCLUSION_POLICY = None
+
+def exclusion_policy():
+    global _EXCLUSION_POLICY
+    if _EXCLUSION_POLICY is None:
+        _EXCLUSION_POLICY = load_policy(DUMPS_DIR, REFERENCE_DUMPS_DIR)
+        print(f"  [Exclusions] {len(_EXCLUSION_POLICY.removed):,} variant identities excluded; {len(_EXCLUSION_POLICY.protected):,} dependencies retained")
+    return _EXCLUSION_POLICY
+
+
 def do_items(debug: bool):
     """Split advitempanel.json -> Items/"""
     print("=" * 50)
@@ -700,7 +711,7 @@ def do_items(debug: bool):
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
-    items = data["shortKey"]
+    items = [item for item in data["shortKey"] if exclusion_policy().keep_item(item)]
     print(f"  Total: {len(items):,} items")
     del data
 
@@ -816,7 +827,7 @@ def do_items_tabx(debug: bool):
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
-    items = data["shortKey"]
+    items = [item for item in data["shortKey"] if exclusion_policy().keep_item(item)]
     del data
 
     # ① 合并 itemicon.json 数据（必须在 fluid 合并之前）
@@ -1783,9 +1794,13 @@ def do_recipes(debug: bool):
             print(f"    Error: {e}")
             continue
 
-        recipes = [r for r in data.get("recipes", []) if isinstance(r, dict)]
+        recipes = [r for r in data.get("recipes", []) if isinstance(r, dict) and exclusion_policy().keep_recipe(r)]
         if not recipes:
-            print(f"    Skipping (empty or all-null recipes)")
+            if any(isinstance(r, dict) for r in data.get("recipes", [])):
+                subdir = os.path.splitext(os.path.relpath(fp, recipes_dir))[0]
+                clear_generated_pages(Path(VERSION) / "Recipes" / subdir, {".json"})
+                _remove_rebuilt_recipe_route(Path(subdir).as_posix())
+            print(f"    Skipping (empty, excluded, or all-null recipes)")
             continue
 
         # 修正非标准 recipe 格式（行星气体钻机 / 太空钻机）

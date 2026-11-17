@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
+from item_exclusions import excluded_icons, load_policy
 
 
 # 预处理固定注入的编程电路条目保留在 Items 中，但不要求每份导出附带这些图片。
@@ -45,12 +46,16 @@ def registry_and_damage(raw):
     return raw, 0
 
 
-def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=None):
+def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=None, policy=None):
     """items 使用原始 advitempanel 记录，key 为无 NBT 哈希的真实身份。"""
     from item_names import canonical_file, is_quest_placeholder
 
     icons_dir = Path(icons_dir)
     physical = {path.name for path in icons_dir.glob('*.png')}
+    skipped = excluded_icons(items, icon_records, policy) if policy is not None else set()
+    physical -= skipped
+    if policy is not None:
+        items = [item for item in items if policy.keep_item(item)]
     records = {row['shortKey']: row for row in icon_records}
     owners = defaultdict(set)
     candidates = defaultdict(dict)
@@ -86,8 +91,8 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
         # 上传流程只复用已有映射；空缓存也不会触发重新读取图片像素。
         if cached_plan.get('schemaVersion') != 1:
             raise ValueError('不支持的图片计划版本')
-        groups = list(cached_plan.get('groups', []))
-        aliases = dict(cached_plan.get('keyAliases', {}))
+        groups = [dict(group, duplicates=[n for n in group['duplicates'] if n not in skipped]) for group in cached_plan.get('groups', []) if group['target'] not in skipped]
+        aliases = {name: target for name, target in cached_plan.get('keyAliases', {}).items() if name not in skipped and target not in skipped}
         for group in groups:
             for name in group['duplicates']:
                 target = group['target']
@@ -122,7 +127,7 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
     skipped_missing = {}
     for title, icon in name_redirects.items():
         # 兼容旧 CSV：仅跳过占位物品的名称别名，保留上方生成的 key 图片重定向。
-        if icon in placeholder_icons:
+        if icon in placeholder_icons or icon in skipped:
             continue
         title = 'File:' + canonical_file(title.removeprefix('File:'))
         if icon in OPTIONAL_CIRCUIT_ICONS and icon not in physical:
@@ -182,7 +187,8 @@ def prepare_plan(source, resolved_csv):
     plan = build_plan(
         json.loads((source / 'advitempanel.json').read_text('utf-8'))['shortKey'],
         json.loads(Path(report['sourceIconsPath']).read_text('utf-8'))['shortKey'],
-        source / 'icons', redirects, cached_plan=cached)
+        source / 'icons', redirects, cached_plan=cached,
+        policy=load_policy(source, Path(report['sourceIconsPath']).parent))
     plan_path.write_text(
         json.dumps(plan, ensure_ascii=False, indent=2), 'utf-8')
     print(f"Image plan: {plan['physicalCount']:,} files; "
