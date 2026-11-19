@@ -16,6 +16,114 @@ from image_state import update_state, pending_redirects
 
 
 class ImagePlanTests(unittest.TestCase):
+    def test_cached_key_aliases_skip_hashing_and_flatten_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('base.png', 'variant.png'):
+                (root / name).write_bytes(b'pixels must not be read')
+            cached = {'schemaVersion': 1, 'groups': [
+                {'registry': 'mod:item', 'role': 'static', 'sha256': 'existing-hash',
+                 'target': 'base.png', 'duplicates': ['variant.png']}]}
+            with patch('image_plan.pixel_hash', side_effect=AssertionError('unexpected hash')):
+                plan = build_plan([], [], root, {'File:名称.png': 'variant.png'}, cached_plan=cached)
+            self.assertEqual(plan['hashedCount'], 0)
+            self.assertEqual(plan['deduplicatedCount'], 1)
+            self.assertEqual(plan['uploadIcons'], ['base.png'])
+            self.assertEqual(plan['redirects'], {'File:Variant.png': 'base.png', 'File:名称.png': 'base.png'})
+            self.assertEqual(plan['groups'], cached['groups'])
+            (root / 'base.png').unlink()
+            with self.assertRaisesRegex(ValueError, '缺少 1 个目标'):
+                build_plan([], [], root, {}, cached_plan=plan)
+
+    def test_prepare_recovers_state_key_aliases_and_reuses_them(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, state = root / 'source', root / 'source_state/Example/1'
+            (source / 'icons').mkdir(parents=True)
+            state.mkdir(parents=True)
+            for name in ('base.png', 'variant.png'):
+                (source / 'icons' / name).write_bytes(b'pixels must not be read')
+            items = [{'key': 'betterquesting:pattern_placeholder', 'shortKey': 'base', 'icon': 'base.png'},
+                     {'key': 'betterquesting:pattern_placeholder', 'shortKey': 'variant', 'icon': 'variant.png'}]
+            (source / 'advitempanel.json').write_text(json.dumps({'shortKey': items}), 'utf-8')
+            icon_source = source / 'itemicon.json'
+            icon_source.write_text(json.dumps({'shortKey': []}), 'utf-8')
+            (state / 'image-name-resolution.json').write_text(json.dumps({'sourceIconsPath': str(icon_source)}), 'utf-8')
+            (state / 'image-upload-plan.json').write_text(json.dumps({'schemaVersion': 1, 'groups': []}), 'utf-8')
+            update_state(state / 'image_inventory.db', {'base.png'},
+                         {'File:Variant.png': 'base.png', 'File:旧中文名.png': 'base.png'})
+            with patch('image_version.redirect_map', return_value={'File:伪物品.png': 'variant.png'}), \
+                    patch('image_plan.pixel_hash', side_effect=AssertionError('unexpected hash')):
+                plan = prepare_plan(source, state / 'image_redirect.resolved.csv')
+                self.assertEqual(plan['redirects'], {'File:Variant.png': 'base.png'})
+                self.assertEqual(plan['keyAliases'], {'variant.png': 'base.png'})
+                self.assertEqual(plan['uploadIcons'], ['base.png'])
+                self.assertEqual(plan['hashedCount'], 0)
+                (state / 'image_inventory.db').unlink()
+                self.assertEqual(prepare_plan(source, state / 'image_redirect.resolved.csv'), plan)
+
+    def test_empty_cache_does_not_hash_new_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('a.png', 'b.png'):
+                (root / name).write_bytes(b'pixels must not be read')
+            items = [{'key': 'mod:item', 'icon': name} for name in ('a.png', 'b.png')]
+            with patch('image_plan.pixel_hash', side_effect=AssertionError('unexpected hash')):
+                plan = build_plan(items, [], root, {}, cached_plan={'schemaVersion': 1})
+            self.assertEqual(plan['uploadIcons'], ['a.png', 'b.png'])
+            self.assertEqual(plan['hashedCount'], 0)
+
+    def test_quest_placeholder_key_redirects_survive_stale_name_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = 'icon_betterquesting_pattern_placeholder.png'
+            variant = 'icon_betterquesting_pattern_placeholder_hash.png'
+            for icon in (base, variant, 'book.png'):
+                Image.new('RGBA', (1, 1), 'red').save(root / icon)
+            items = [
+                {'key': 'betterquesting:pattern_placeholder', 'shortKey': 'base', 'icon': base},
+                {'key': 'betterquesting:pattern_placeholder', 'shortKey': 'variant',
+                 'nbt': '{x:1}', 'icon': variant},
+                {'key': 'betterquesting:guide_book', 'shortKey': 'book', 'icon': 'book.png'},
+            ]
+            plan = build_plan(items, [], root, {'File:伪铁锭.png': variant,
+                                                'File:占位符.png': base,
+                                                'File:任务指南.png': 'book.png'})
+            self.assertEqual(plan['redirects'], {
+                'File:Icon betterquesting pattern placeholder hash.png': base,
+                'File:任务指南.png': 'book.png'})
+            self.assertEqual(plan['uploadIcons'], sorted([base, 'book.png']))
+
+    def test_injected_circuit_images_are_optional_only_when_absent(self):
+        redirects = {f'File:编程电路{i}.png': f'icon_gregtech_gt.integrated_circuit_{i}.png'
+                     for i in range(1, 25)}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = build_plan([], [], root, redirects)
+            self.assertEqual(plan['redirects'], {})
+            self.assertEqual(plan['uploadIcons'], [])
+            self.assertEqual(plan['skippedMissingRedirects'], redirects)
+            icon = redirects['File:编程电路1.png']
+            Image.new('RGBA', (1, 1), 'red').save(root / icon)
+            plan = build_plan([], [], root, redirects)
+            self.assertEqual(plan['uploadIcons'], [icon])
+            self.assertEqual(plan['redirects'], {'File:编程电路1.png': icon})
+            self.assertEqual(len(plan['skippedMissingRedirects']), 23)
+            for missing in ('ordinary.png', 'icon_gregtech_gt.integrated_circuit_0.png',
+                            'icon_gregtech_gt.integrated_circuit_25.png',
+                            'icon_gregtech_gt.integrated_circuit_1_dynamic.png'):
+                with self.subTest(icon=missing), self.assertRaises(ValueError):
+                    build_plan([], [], root, {**redirects, 'File:其他.png': missing})
+
+    def test_missing_redirect_target_reports_mapping_and_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ValueError) as error:
+                build_plan([], [], directory, {'File:编程电路1.png': 'missing.png'})
+            message = str(error.exception)
+            self.assertIn('File:编程电路1.png -> missing.png', message)
+            self.assertIn(directory, message)
+            self.assertIn('split_all.py items', message)
+
     def test_filtered_source_uses_validated_fallback_icons(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

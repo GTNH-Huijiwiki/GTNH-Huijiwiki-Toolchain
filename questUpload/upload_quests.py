@@ -204,6 +204,8 @@ def main(argv=None):
     try:
         config = load_config(args.env_file, keys=UPLOAD_KEYS, required={"MOD_REMOTE_NAME", "MOD_VERSION"})
         config["BASE_URL"] = config.get("BASE_URL", "https://gtnh.huijiwiki.com/api.php").strip()
+        if config["BASE_URL"] == "http://gtnh.huijiwiki.com/api.php":
+            config["BASE_URL"] = "https://gtnh.huijiwiki.com/api.php"
         url = urllib.parse.urlsplit(config["BASE_URL"])
         if url.scheme not in {"http", "https"} or not url.netloc or url.username or url.password:
             raise ValueError("BASE_URL 必须是有效的 HTTP(S) API 地址，不得内嵌用户名或密码")

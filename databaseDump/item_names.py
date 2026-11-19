@@ -46,6 +46,12 @@ def canonical_file(title):
     return value[:1].upper() + value[1:]
 
 
+def is_quest_placeholder(item):
+    """任务占位物品保留身份与名称索引，但不占用中文图片名。"""
+    raw = item.get("rawKey") or item.get("key", "")
+    return re.match(r"^betterquesting:(?:pattern_placeholder|placeholder)(?:$|[:_])", raw) is not None
+
+
 def collect_names(items):
     names = defaultdict(set)
     candidates = defaultdict(dict)
@@ -55,6 +61,8 @@ def collect_names(items):
         if not key or not isinstance(name, str) or not name.strip():
             continue
         names[name].add(key)
+        if is_quest_placeholder(item):
+            continue
         icon = item.get("iconName") or item.get("icon")
         title = image_title(name)
         if not icon or not title:

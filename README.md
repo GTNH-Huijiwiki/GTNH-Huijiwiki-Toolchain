@@ -11,7 +11,7 @@
 - `questUpload/`：将 BetterQuesting 任务书汉化，导出并上传当前版本的 QuestLines / Quests JSON 数据页，见 [运行说明](questUpload/README.md)。
 
 ## 主要用途
-
+p
 这套工具主要做三件事：
 
 1. 从 `dumps/` 里的原始导出数据拆分出适合维基上传的页面数据。
@@ -36,7 +36,7 @@ copy .env.example .env
 需要重点修改：
 
 - `DUMPS_DIR`：Minecraft 导出的 `dumps` 目录。当前数据源由 [iouter/GTNH-Dumper](https://github.com/iouter/GTNH-Dumper) 生成，`DUMPS_DIR` 应指向这个工具导出的目录。
-- `BASE_URL`：目标 wiki 的 MediaWiki API 地址，默认是 `https://gtnh.huijiwiki.com/api.php`。
+- `BASE_URL`：目标 wiki 的 MediaWiki API 地址，默认是 `http://gtnh.huijiwiki.com/api.php`。
 - `AUTHKEY`：wiki API 需要的认证 key。
 - `EDITOR_USERNAME` / `EDITOR_PASSWORD`：普通编辑账号，供 `wiki.py` 使用。
 - `BOT_USERNAME` / `BOT_PASSWORD`：批量上传账号，供 `databaseDump` 里的上传脚本使用。

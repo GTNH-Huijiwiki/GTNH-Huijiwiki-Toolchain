@@ -23,6 +23,8 @@ from pathlib import Path
 from data_version import addon_mods, local_mod_name, source_directory, version_module_title, version_tag
 from item_names import build_artifacts, image_name_config, read_items, write_item_name_index
 from nbt_identity import nbt_identity
+from item_exclusions import load_policy
+from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
 
@@ -514,7 +516,7 @@ def _regress_nbt_only_items(items: list):
 # ============================================================
 
 def _inject_custom_items(items: list):
-    """在 item 列表末尾强行注入自定义条目（如编程电路各配置变体）。"""
+    """注入编程电路配置 1~24；对应图片允许在当前导出中缺失。"""
     n = len(items)
 
     # 编程电路 (gregtech:gt.integrated_circuit) — 配置 1~24
@@ -690,6 +692,16 @@ def _merge_fluid_data(items: list, fluid_map: dict):
     print(f"  Fluid-merged {merged} items (shortKey/key rewritten to fluid.key).")
 
 
+_EXCLUSION_POLICY = None
+
+def exclusion_policy():
+    global _EXCLUSION_POLICY
+    if _EXCLUSION_POLICY is None:
+        _EXCLUSION_POLICY = load_policy(DUMPS_DIR, REFERENCE_DUMPS_DIR)
+        print(f"  [Exclusions] {len(_EXCLUSION_POLICY.removed):,} variant identities excluded; {len(_EXCLUSION_POLICY.protected):,} dependencies retained")
+    return _EXCLUSION_POLICY
+
+
 def do_items(debug: bool):
     """Split advitempanel.json -> Items/"""
     print("=" * 50)
@@ -700,7 +712,7 @@ def do_items(debug: bool):
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
-    items = data["shortKey"]
+    items = [item for item in data["shortKey"] if exclusion_policy().keep_item(item)]
     print(f"  Total: {len(items):,} items")
     del data
 
@@ -816,7 +828,7 @@ def do_items_tabx(debug: bool):
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
-    items = data["shortKey"]
+    items = [item for item in data["shortKey"] if exclusion_policy().keep_item(item)]
     del data
 
     # ① 合并 itemicon.json 数据（必须在 fluid 合并之前）
@@ -1280,7 +1292,7 @@ def _append_ore_dict_short_patterns(rows: list[list[str]]) -> list[list[str]]:
     return result
 
 
-def _write_ores_table_json(rows: list[list[str]]):
+def _write_ores_table_json(rows):
     """Write ore helper data in tabx-style schema to Ores/0.tabx."""
     output_dir = os.path.join(VERSION, "Ores")
     os.makedirs(output_dir, exist_ok=True)
@@ -1323,6 +1335,7 @@ def _write_ores_table_json(rows: list[list[str]]):
         },
         "data": rows,
     }
+    payload["schema"]["fields"].extend(ORE_PROCESSING_FIELDS)
 
     out_path = os.path.join(output_dir, "0.tabx")
     size = write_version_json(out_path, payload)
@@ -1374,6 +1387,10 @@ def do_gtmaterial(debug: bool):
     ore_rows = _append_missing_hee_ore_rows(ore_rows, oredict_map, item_display_map)
     ore_rows = _enrich_ore_rows(ore_rows, oredict_map, item_display_map)
     ore_rows = _append_ore_dict_short_patterns(ore_rows)
+    ore_rows = append_flags(
+        ore_rows, data, oredict_map,
+        read_recipe_documents(Path(REFERENCE_DUMPS_DIR) / "recipes", Path(DUMPS_DIR) / "recipes"),
+    )
     _write_ores_table_json(ore_rows)
 
     _split_flat_dict_impl(data, os.path.join(VERSION, "Gtmaterial"), debug)
@@ -1846,9 +1863,13 @@ def do_recipes(debug: bool):
             print(f"    Error: {e}")
             continue
 
-        recipes = [r for r in data.get("recipes", []) if isinstance(r, dict)]
+        recipes = [r for r in data.get("recipes", []) if isinstance(r, dict) and exclusion_policy().keep_recipe(r)]
         if not recipes:
-            print(f"    Skipping (empty or all-null recipes)")
+            if any(isinstance(r, dict) for r in data.get("recipes", [])):
+                subdir = os.path.splitext(os.path.relpath(fp, recipes_dir))[0]
+                clear_generated_pages(Path(VERSION) / "Recipes" / subdir, {".json"})
+                _remove_rebuilt_recipe_route(Path(subdir).as_posix())
+            print(f"    Skipping (empty, excluded, or all-null recipes)")
             continue
 
         # 修正非标准 recipe 格式（行星气体钻机 / 太空钻机）
