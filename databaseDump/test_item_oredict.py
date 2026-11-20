@@ -1,6 +1,6 @@
 import unittest
 
-from split_all import attach_ore_dictionaries
+from split_all import attach_ore_dictionaries, require_ore_entries
 
 
 class ItemOreDictTest(unittest.TestCase):
@@ -24,6 +24,12 @@ class ItemOreDictTest(unittest.TestCase):
         self.assertEqual(items[2]['oredict'], ['blockWool'])
         self.assertEqual(items[3]['oredict'], ['blockWool'])
         self.assertNotIn('oredict', items[4])
+
+
+class EmptyOreDictTest(unittest.TestCase):
+    def test_empty_export_is_rejected(self):
+        with self.assertRaises(ValueError):
+            require_ore_entries([], 'oreDictionary.json')
 
 
 if __name__ == '__main__':

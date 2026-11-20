@@ -791,13 +791,20 @@ def attach_ore_dictionaries(items, entries):
     return count
 
 
+def require_ore_entries(entries, path):
+    """整合包一定有矿辞；空列表说明导出出错（曾出现过 27 字节的空 oreDictionary.json），不能当作正常数据。"""
+    if not entries:
+        raise ValueError(f"矿辞导出为空：{path}。请检查 Dumper 的矿辞导出后重新导出，不要用这份数据拆分或上传。")
+    return entries
+
+
 def _attach_ore_dictionaries(items):
     path = os.path.join(DUMPS_DIR, "oreDictionary.json")
     if not os.path.isfile(path) or not os.path.getsize(path):
         print(f"  [OreDict] 跳过：缺少 {path}，物品不带 oredict 字段")
         return
     with open(path, "r", encoding="utf-8") as stream:
-        entries = json.load(stream)["oreDictionaries"]
+        entries = require_ore_entries(json.load(stream)["oreDictionaries"], path)
     count = attach_ore_dictionaries(items, entries)
     print(f"  [OreDict] {count:,} items carry an oredict list")
 
@@ -1000,7 +1007,7 @@ def do_oredictionary(debug: bool):
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
-    entries = data["oreDictionaries"]
+    entries = require_ore_entries(data["oreDictionaries"], path)
     del data
 
     items_dir = Path(VERSION) / "Items"
