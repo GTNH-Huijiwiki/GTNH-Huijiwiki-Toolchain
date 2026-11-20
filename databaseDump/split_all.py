@@ -24,7 +24,7 @@ from item_names import build_artifacts, image_name_config, read_items, write_ite
 from nbt_identity import nbt_identity
 from item_exclusions import load_policy
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
-from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_bounded
+from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_array_pages, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
 
 # Ensure real-time progress output
@@ -514,27 +514,6 @@ def _regress_nbt_only_items(items: list):
 # Custom item injection
 # ============================================================
 
-def _inject_custom_items(items: list):
-    """注入编程电路配置 1~24；对应图片允许在当前导出中缺失。"""
-    n = len(items)
-
-    # 编程电路 (gregtech:gt.integrated_circuit) — 配置 1~24
-    for i in range(1, 25):
-        items.append({
-            "shortKey": f"gregtech:gt.integrated_circuit:{i}",
-            "key": f"gregtech:gt.integrated_circuit:{i}",
-            "originalName": "Programmed Circuit",
-            "translatedName": f"编程电路{i}",
-            "tooltips": f"编程电路<br>配置== {i}<br>右键以重新配置<br>需要螺丝刀或编程工具",
-            "mod": "GregTech",
-            "iconName": f"icon_gregtech_gt.integrated_circuit_{i}.png",
-            "size": 16,
-            "frameCount": 1,
-        })
-
-    print(f"  Injected {len(items) - n} custom items ({n} -> {len(items)})")
-
-
 # ============================================================
 # Tasks
 # ============================================================
@@ -723,9 +702,6 @@ def do_items(debug: bool):
     fluid_map = _load_fluid_map()
     _merge_fluid_data(items, fluid_map)
 
-    # ③ 注入自定义条目
-    _inject_custom_items(items)
-
     # ④ 清理无效格式码
     _clean_tooltips(items)
 
@@ -791,13 +767,20 @@ def attach_ore_dictionaries(items, entries):
     return count
 
 
+def require_ore_entries(entries, path):
+    """整合包一定有矿辞；空列表说明导出出错（曾出现过 27 字节的空 oreDictionary.json），不能当作正常数据。"""
+    if not entries:
+        raise ValueError(f"矿辞导出为空：{path}。请检查 Dumper 的矿辞导出后重新导出，不要用这份数据拆分或上传。")
+    return entries
+
+
 def _attach_ore_dictionaries(items):
     path = os.path.join(DUMPS_DIR, "oreDictionary.json")
     if not os.path.isfile(path) or not os.path.getsize(path):
         print(f"  [OreDict] 跳过：缺少 {path}，物品不带 oredict 字段")
         return
     with open(path, "r", encoding="utf-8") as stream:
-        entries = json.load(stream)["oreDictionaries"]
+        entries = require_ore_entries(json.load(stream)["oreDictionaries"], path)
     count = attach_ore_dictionaries(items, entries)
     print(f"  [OreDict] {count:,} items carry an oredict list")
 
@@ -871,9 +854,6 @@ def do_items_tabx(debug: bool):
     # ② 合并 fluid.json 数据（改写 GregTech_FluidDisplay → fluid.key）
     fluid_map = _load_fluid_map()
     _merge_fluid_data(items, fluid_map)
-
-    # ③ 注入自定义条目
-    _inject_custom_items(items)
 
     # ④ 清理无效格式码
     _clean_tooltips(items)
@@ -1000,7 +980,7 @@ def do_oredictionary(debug: bool):
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
-    entries = data["oreDictionaries"]
+    entries = require_ore_entries(data["oreDictionaries"], path)
     del data
 
     items_dir = Path(VERSION) / "Items"
@@ -1441,6 +1421,52 @@ def do_ticmaterial(debug: bool):
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
     _split_flat_dict_impl(data, os.path.join(VERSION, "Ticmaterial"), debug)
+
+
+# 线上 模块:Database、模块:条目/维度、模块:条目/属性接口 读取的维度记录结构（容器与字段名），改动需与 Lua 同步。
+DIMENSION_ARRAY = "abbreviatedName"
+
+
+def flatten_dimension(record: dict) -> dict:
+    """新版 Dumper 把 GTNEI 字段放在 gtneiInfo 里；线上读取的是平铺结构，这里提回顶层。
+
+    顶层字段优先（两者不重名）；没有 gtneiInfo 的维度（Forge 追加的 dim:<ID>）原样保留。
+    """
+    flat = dict(record.get("gtneiInfo") or {})
+    flat.update((key, value) for key, value in record.items() if key != "gtneiInfo")
+    return flat
+
+
+def do_dimensions(debug: bool):
+    """gtnhdimension.json -> gtnhdimension/0.json（整合包维度与星系参数）。
+
+    兼容两种 Dumper 输出：新版 {"dimensions": [...]}（GTNEI 字段在 gtneiInfo 内）和旧版
+    {"abbreviatedName": [...]}。发布时统一为线上 Lua 读取的平铺结构 {"abbreviatedName": [...]}。
+    只有 GTNH 处理；附属模组和缺少输入时跳过。
+    """
+    print("=" * 50)
+    print("[Dimensions]")
+    print("=" * 50)
+    if local_mod_name() != "GTNH":
+        print("  跳过维度：只属于 GTNH 整合包")
+        return
+    path = Path(DUMPS_DIR) / "gtnhdimension.json"
+    if not path.is_file() or not path.stat().st_size:
+        print(f"  跳过缺失或空的维度输入: {path}")
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    records = data.get("dimensions")
+    if records is None:
+        records = data.get(DIMENSION_ARRAY)
+    if not isinstance(records, list):
+        raise ValueError(f"无法识别的维度导出结构: {sorted(data)}")
+    rows = [flatten_dimension(record) for record in records]
+    output = Path(VERSION) / "gtnhdimension"
+    written = write_array_pages(rows, {}, DIMENSION_ARRAY, output, HARD_MAX_BYTES)
+    if not debug:
+        clear_generated_pages(output, {".json"}, keep=written)
+    galactic = sum(1 for row in rows if row.get("galacticSpaceInfo"))
+    print(f"  {len(rows):,} dimensions ({galactic} with galacticSpaceInfo) -> {len(written)} file(s)")
 
 
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
@@ -1945,6 +1971,7 @@ TASKS = {
     "ticmaterial":("TicMaterial",  do_ticmaterial),
     "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
     "quests":     ("Quests",       do_quests),
+    "dimensions": ("Dimensions",   do_dimensions),
 }
 
 STANDALONE_TASKS = {

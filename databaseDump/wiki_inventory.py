@@ -213,8 +213,8 @@ def scan_local_files() -> dict[str, tuple[float, int]]:
 
 
 # 工具链不生成、但线上需要保留的目录（版本目录下第一级）。
-# gtnhdimension：线上维度数据含 Dumper 尚未导出的字段，由他人于 2026-11-02 手工上传，暂作特例保留。
-KEEP_ONLINE_DIRS = frozenset({"gtnhdimension"})
+# 目前没有：gtnhdimension 已由 split_all.py dimensions 生成（Dumper 已导出完整维度与星系参数）。
+KEEP_ONLINE_DIRS = frozenset()
 
 
 def canonical_title(title: str) -> str:

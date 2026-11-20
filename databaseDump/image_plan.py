@@ -12,9 +12,6 @@ from PIL import Image
 from item_exclusions import excluded_icons, load_policy
 
 
-# 预处理固定注入的编程电路条目保留在 Items 中，但不要求每份导出附带这些图片。
-OPTIONAL_CIRCUIT_ICONS = frozenset(
-    f'icon_gregtech_gt.integrated_circuit_{i}.png' for i in range(1, 25))
 
 
 def pixel_hash(path):
@@ -125,15 +122,11 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
 
     uploads = physical - aliases.keys()
     redirects = {'File:' + canonical_file(name): target for name, target in aliases.items()}
-    skipped_missing = {}
     for title, icon in name_redirects.items():
         # 兼容旧 CSV：仅跳过占位物品的名称别名，保留上方生成的 key 图片重定向。
         if icon in placeholder_icons or icon in skipped:
             continue
         title = 'File:' + canonical_file(title.removeprefix('File:'))
-        if icon in OPTIONAL_CIRCUIT_ICONS and icon not in physical:
-            skipped_missing[title] = icon
-            continue
         target = aliases.get(icon, icon)
         if title == 'File:' + canonical_file(target):
             continue
@@ -154,7 +147,7 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
     return {'schemaVersion': 1, 'physicalCount': len(physical), 'hashedCount': hashed,
             'uploadCount': len(uploads), 'deduplicatedCount': len(aliases),
             'uploadIcons': sorted(uploads), 'redirects': dict(sorted(redirects.items())),
-            'groups': groups, 'keyAliases': dict(sorted(aliases.items())), 'skippedMissingRedirects': dict(sorted(skipped_missing.items()))}
+            'groups': groups, 'keyAliases': dict(sorted(aliases.items()))}
 
 
 def prepare_plan(source, resolved_csv):
@@ -201,6 +194,4 @@ def prepare_plan(source, resolved_csv):
         json.dumps(plan, ensure_ascii=False, indent=2), 'utf-8')
     print(f"Image plan: {plan['physicalCount']:,} files; "
           f"{plan['deduplicatedCount']:,} duplicates; {plan['uploadCount']:,} physical uploads")
-    if plan['skippedMissingRedirects']:
-        print(f"Skipped {len(plan['skippedMissingRedirects'])} circuit redirects: optional images absent")
     return plan

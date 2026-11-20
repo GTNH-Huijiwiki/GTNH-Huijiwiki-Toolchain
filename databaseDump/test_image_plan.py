@@ -94,27 +94,6 @@ class ImagePlanTests(unittest.TestCase):
                 'File:任务指南.png': 'book.png'})
             self.assertEqual(plan['uploadIcons'], sorted([base, 'book.png']))
 
-    def test_injected_circuit_images_are_optional_only_when_absent(self):
-        redirects = {f'File:编程电路{i}.png': f'icon_gregtech_gt.integrated_circuit_{i}.png'
-                     for i in range(1, 25)}
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            plan = build_plan([], [], root, redirects)
-            self.assertEqual(plan['redirects'], {})
-            self.assertEqual(plan['uploadIcons'], [])
-            self.assertEqual(plan['skippedMissingRedirects'], redirects)
-            icon = redirects['File:编程电路1.png']
-            Image.new('RGBA', (1, 1), 'red').save(root / icon)
-            plan = build_plan([], [], root, redirects)
-            self.assertEqual(plan['uploadIcons'], [icon])
-            self.assertEqual(plan['redirects'], {'File:编程电路1.png': icon})
-            self.assertEqual(len(plan['skippedMissingRedirects']), 23)
-            for missing in ('ordinary.png', 'icon_gregtech_gt.integrated_circuit_0.png',
-                            'icon_gregtech_gt.integrated_circuit_25.png',
-                            'icon_gregtech_gt.integrated_circuit_1_dynamic.png'):
-                with self.subTest(icon=missing), self.assertRaises(ValueError):
-                    build_plan([], [], root, {**redirects, 'File:其他.png': missing})
-
     def test_missing_redirect_target_reports_mapping_and_source(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError) as error:
