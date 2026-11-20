@@ -173,6 +173,41 @@ GTNH 保留已有数据库和上传记录。图片任务只选择当前来源中
 
 Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数据源及本地清单。
 
+### 重传判定（image_check.py）
+
+`image_inventory.py` 记下每张图的本地文件 sha1 后，对“待更新”的图标查询线上同名文件，按下列规则决定是否重传。
+`image_upload.py` 上传前会再核对一次，所以未变化的图片不会反复上传。加 `--offline` 可跳过线上查询。
+
+1. 本地与线上文件 sha1 相同：不传。
+2. 免更新：导出时是动图（`itemicon.json` 中 `frameCount > 1`，静态图和帧条都算），
+   或列在 `config/image_unstable.json` 中，且线上已有文件：不传。
+3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取 RGBA 通道差的最大值，
+   平均 ≤ 1 且最大 ≤ 32 视为相同：不传。不同显卡、驱动下方块边缘的光栅化差异属于这一类。
+4. 其余上传，包括线上没有的图片。
+
+视觉判定按（线上 sha1，本地 sha1）存进状态库的 `visual_checks` 表，下次直接复用，
+下载的线上原图缓存在 `source_state/wiki-originals/`（不提交）。
+
+`config/image_unstable.json` 是渲染不稳定的图标名单：同一整合包、同一导出器连续导出两次，
+像素仍然不同的图标（附魔光效、生物模型、随时间变色等）。用两次导出的 `icon-hashes.json` 生成，只增不减：
+
+```bash
+python image_check.py stability <第一次的 dumps 目录> <第二次的 dumps 目录>
+```
+
+`icon-hashes.json` 由 GTNH-Dumper 写出，记录每个 PNG 的像素哈希；导出器已固定渲染时钟，
+多数随时间变化的图标已经稳定，名单只收剩下的。
+
+判定结果也可以放到线上，供其他维护者复用（线上 Lua 不查询，仅供维护）：
+
+```bash
+python image_check.py export   # 写到 wikitext/Data/Versions/<远端模组名>/<版本>/ImageState/，随 data_upload.py 上传
+python image_check.py pull     # 读取线上 ImageState，补齐本地状态库的线上 sha1 与视觉判定
+```
+
+每页数组 `imageStates` 的一行是 `[图标名, 线上 sha1, 本地 sha1, 判定]`，判定为
+`same`（字节相同）、`visual`（视觉相同）、`animated`、`unstable` 或 `changed`（待重传）。
+
 ### 中文重名图片的人工选择
 
 物品预处理会自动扫描重名，生成诊断报告和重定向表。人工选择和默认规则确定的标题进入

@@ -24,6 +24,8 @@ import http.cookiejar
 from image_version import image_paths, require_source
 from image_plan import prepare_plan
 from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy
+from image_check import check_pending, exempt_icons
+from pathlib import Path
 from item_names import canonical_file
 import hashlib
 
@@ -74,7 +76,8 @@ def get_pending_icons(plan=None) -> list[str]:
     if plan is None:
         plan = prepare_plan(DUMPS_DIR, NEW_CSV)
     current_icons = set(plan['uploadIcons'])
-    update_state(INVENTORY_DB, current_icons, plan['redirects'], icon_hashes(ICONS_DIR, current_icons))
+    exempt = exempt_icons(DUMPS_DIR)
+    update_state(INVENTORY_DB, current_icons, plan['redirects'], icon_hashes(ICONS_DIR, current_icons), exempt)
     with closing(sqlite3.connect(INVENTORY_DB)) as conn:
         legacy = [r[0] for r in conn.execute("SELECT icon_name FROM images WHERE icon_state='待核验'")
                   if r[0] in current_icons]
@@ -87,6 +90,9 @@ def get_pending_icons(plan=None) -> list[str]:
         pages = {canonical_file(p['title'].split(':',1)[1]): p for p in data['query']['pages'].values()}
         reconcile_legacy(INVENTORY_DB, {n: pages.get(canonical_file(n), {}).get('imageinfo', [{}])[0].get('sha1')
                                       for n in batch})
+    # 线上已有文件的先按判定规则核对，未变化或视觉相同的不重传。
+    check_pending(INVENTORY_DB, ICONS_DIR, current_icons, exempt,
+                  Path(__file__).resolve().parent / "source_state" / "wiki-originals")
     with closing(sqlite3.connect(INVENTORY_DB)) as conn:
         rows = conn.execute(
             "SELECT DISTINCT icon_name FROM images "

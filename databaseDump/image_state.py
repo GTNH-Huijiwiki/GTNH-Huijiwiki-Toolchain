@@ -33,6 +33,33 @@ def init_db(path):
         for column in ("content_sha1", "uploaded_sha1"):
             if column not in columns:
                 conn.execute(f"ALTER TABLE images ADD COLUMN {column} TEXT")
+        # 视觉规则判定按（线上 sha1，本地 sha1）记录，见 image_check.py。
+        conn.execute("CREATE TABLE IF NOT EXISTS visual_checks ("
+                     "wiki_sha1 TEXT NOT NULL, content_sha1 TEXT NOT NULL, same INTEGER NOT NULL, "
+                     "PRIMARY KEY (wiki_sha1, content_sha1))")
+
+
+# 线上已有文件时视为已上传：字节相同、视觉规则判定相同，或在免更新名单（动图、渲染不稳定）中。
+_SETTLED = ("uploaded_sha1=content_sha1 OR EXISTS (SELECT 1 FROM visual_checks v "
+            "WHERE v.wiki_sha1=images.uploaded_sha1 AND v.content_sha1=images.content_sha1 AND v.same=1) "
+            "OR (uploaded_sha1 IS NOT NULL AND icon_name IN (SELECT icon_name FROM temp.exempt))")
+
+
+def _load_exempt(conn, exempt):
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS exempt (icon_name TEXT PRIMARY KEY)")
+    conn.execute("DELETE FROM temp.exempt")
+    conn.executemany("INSERT OR IGNORE INTO temp.exempt VALUES (?)", ((name,) for name in exempt))
+
+
+def set_uploaded(conn, name, sha1, exempt=None):
+    """记录线上当前文件的 sha1，并按判定规则更新状态。"""
+    if exempt is not None:
+        _load_exempt(conn, exempt)
+    else:
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS exempt (icon_name TEXT PRIMARY KEY)")
+    conn.execute("UPDATE images SET uploaded_sha1=? WHERE icon_name=?", (sha1, name))
+    conn.execute(f"UPDATE images SET icon_state=CASE WHEN {_SETTLED} THEN '已上传' ELSE '待更新' END "
+                 "WHERE icon_name=?", (name,))
 
 
 def icon_hashes(directory, icons):
@@ -54,17 +81,19 @@ def reconcile_legacy(path, live_hashes):
                          "WHERE icon_name=? AND icon_state='待核验'", (sha1, sha1, name))
 
 
-def update_state(path, icons, redirects, hashes=None):
+def update_state(path, icons, redirects, hashes=None, exempt=()):
     init_db(path)
     with closing(sqlite3.connect(path)) as conn, conn:
+        _load_exempt(conn, exempt)
         for icon in sorted(icons):
             conn.execute("INSERT OR IGNORE INTO images (icon_name,icon_state) VALUES (?, '待更新')", (icon,))
         if hashes is not None:
             for icon, sha1 in hashes.items():
-                conn.execute("UPDATE images SET content_sha1=?, icon_state=CASE "
-                             "WHEN uploaded_sha1=? THEN '已上传' "
+                conn.execute("UPDATE images SET content_sha1=? WHERE icon_name=?", (sha1, icon))
+                conn.execute("UPDATE images SET icon_state=CASE "
                              "WHEN uploaded_sha1 IS NULL AND icon_state IN ('已上传','待核验') THEN '待核验' "
-                             "ELSE '待更新' END WHERE icon_name=?", (sha1, sha1, icon))
+                             f"WHEN {_SETTLED} THEN '已上传' "
+                             "ELSE '待更新' END WHERE icon_name=?", (icon,))
         for title, icon in sorted(redirects.items()):
             if icon not in icons:
                 raise ValueError(f"中文图片名指向缺失图片: {title} -> {icon}")

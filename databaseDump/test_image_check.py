@@ -1,0 +1,121 @@
+import io
+import json
+import sqlite3
+import tempfile
+import unittest
+from contextlib import closing
+from pathlib import Path
+from unittest.mock import patch
+
+from PIL import Image
+
+import image_check
+from image_state import set_uploaded, update_state
+
+
+def png(color, size=256, edge=None):
+    image = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    for x in range(32, size - 32):
+        for y in range(32, size - 32):
+            image.putpixel((x, y), color)
+    if edge is not None:
+        # 模拟不同显卡的光栅化差异：边缘一列像素整列翻转
+        for y in range(32, size - 32):
+            image.putpixel((size - 33, y), edge)
+    buffer = io.BytesIO()
+    image.save(buffer, 'PNG')
+    return buffer.getvalue()
+
+
+class VisualRuleTest(unittest.TestCase):
+    def test_edge_rasterization_counts_as_same(self):
+        self.assertTrue(image_check.visually_same(png((200, 50, 50, 255)), png((200, 50, 50, 255), edge=(0, 0, 0, 0))))
+
+    def test_colour_change_is_different(self):
+        self.assertFalse(image_check.visually_same(png((200, 50, 50, 255)), png((50, 200, 50, 255))))
+
+    def test_size_change_is_different(self):
+        self.assertFalse(image_check.visually_same(png((1, 2, 3, 255)), png((1, 2, 3, 255), size=128)))
+
+    def test_transparent_colour_is_ignored(self):
+        a = Image.new('RGBA', (16, 16), (255, 0, 0, 0))
+        b = Image.new('RGBA', (16, 16), (0, 0, 255, 0))
+        data = []
+        for image in (a, b):
+            buffer = io.BytesIO()
+            image.save(buffer, 'PNG')
+            data.append(buffer.getvalue())
+        self.assertEqual(image_check.visual_distance(*data), (0, 0))
+
+
+class StateTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / 'state.db')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def states(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            return dict(conn.execute('SELECT icon_name, icon_state FROM images'))
+
+    def test_visual_check_and_exemption_settle_icons(self):
+        icons = {'a.png', 'b.png', 'c.png', 'd.png'}
+        update_state(self.db, icons, {}, {'a.png': 'A2', 'b.png': 'B2', 'c.png': 'C2', 'd.png': 'D2'})
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            for name, sha1 in (('a.png', 'A1'), ('b.png', 'B1'), ('c.png', 'C1'), ('d.png', 'D2')):
+                set_uploaded(conn, name, sha1)
+            conn.execute("INSERT INTO visual_checks VALUES ('A1', 'A2', 1)")
+            conn.execute("INSERT INTO visual_checks VALUES ('C1', 'C2', 0)")
+        update_state(self.db, icons, {}, {'a.png': 'A2', 'b.png': 'B2', 'c.png': 'C2', 'd.png': 'D2'}, {'b.png'})
+        self.assertEqual(self.states(), {'a.png': '已上传', 'b.png': '已上传', 'c.png': '待更新', 'd.png': '已上传'})
+        # 本地再次变化后，旧判定不再适用
+        update_state(self.db, icons, {}, {'a.png': 'A3', 'b.png': 'B2', 'c.png': 'C2', 'd.png': 'D2'}, {'b.png'})
+        self.assertEqual(self.states()['a.png'], '待更新')
+        rows = image_check.state_rows(self.db, icons, {'b.png': 'animated'})
+        self.assertEqual([r[3] for r in rows], ['changed', 'animated', 'changed', 'same'])
+
+    def test_exemption_needs_an_online_file(self):
+        update_state(self.db, {'new.png'}, {}, {'new.png': 'N1'}, {'new.png'})
+        self.assertEqual(self.states(), {'new.png': '待更新'})
+
+    def test_check_pending_records_verdicts_and_reuses_them(self):
+        icons_dir = Path(self.tmp.name) / 'icons'
+        icons_dir.mkdir()
+        local = {'same.png': png((9, 9, 9, 255)), 'moved.png': png((9, 9, 9, 255)), 'new.png': png((1, 1, 1, 255))}
+        for name, data in local.items():
+            (icons_dir / name).write_bytes(data)
+        import hashlib
+        hashes = {name: hashlib.sha1(data).hexdigest() for name, data in local.items()}
+        update_state(self.db, set(local), {}, hashes)
+        remote = {'same.png': png((9, 9, 9, 255), edge=(0, 0, 0, 0)), 'moved.png': png((90, 9, 9, 255))}
+        files = {name: {'sha1': hashlib.sha1(data).hexdigest(), 'url': name} for name, data in remote.items()}
+        with patch('image_check.wiki_files', return_value=files) as query, \
+                patch('image_check.download', side_effect=lambda url, sha1, cache: remote[url]):
+            stats = image_check.check_pending(self.db, icons_dir, set(local), {}, Path(self.tmp.name), threads=2)
+            self.assertEqual((stats['visualSame'], stats['changed'], stats['notOnWiki']), (1, 1, 1))
+            update_state(self.db, set(local), {}, hashes)
+            self.assertEqual(self.states(), {'same.png': '已上传', 'moved.png': '待更新', 'new.png': '待更新'})
+            image_check.check_pending(self.db, icons_dir, set(local), {}, Path(self.tmp.name), threads=2)
+            # 已判定为变化的不再查询，只剩线上不存在的
+            self.assertEqual(sorted(query.call_args.args[0]), ['new.png'])
+
+
+class StabilityTest(unittest.TestCase):
+    def test_unstable_list_only_grows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for run, images in (('a', {'x.png': '1', 'y.png': '2'}), ('b', {'x.png': '1', 'y.png': '3'})):
+                (root / run).mkdir()
+                (root / run / 'icon-hashes.json').write_text(json.dumps({'images': images}))
+            config = root / 'image_unstable.json'
+            config.write_text(json.dumps({'icons': ['old.png']}))
+            with patch('image_check.UNSTABLE_CONFIG', config):
+                result = image_check.record_stability(root / 'a', root / 'b')
+                self.assertEqual(result['added'], 1)
+                self.assertEqual(image_check.unstable_icons(), {'old.png', 'y.png'})
+
+
+if __name__ == '__main__':
+    unittest.main()
