@@ -1476,6 +1476,29 @@ def do_thaumonomicon(debug: bool):
         print(f"  [Thaumonomicon/{folder}] {len(rows[section]):,} records -> {len(written)} file(s)")
 
 
+def do_quests(debug: bool):
+    """dumps/betterquesting -> QuestLines/N.json、Quests/N.json（任务书，整合包整体所有）。
+
+    输入是 GTNH-Dumper 复制的 DefaultQuests 与 lang/zh_CN.lang；整理规则见 quests.py 与 README。
+    只有 GTNH 处理；附属模组和缺少输入时跳过。
+    """
+    from quests import export_quests
+    source = Path(DUMPS_DIR) / "betterquesting"
+    if local_mod_name() != "GTNH":
+        print("跳过任务书：只属于 GTNH 整合包")
+        return
+    if not (source / "DefaultQuests").is_dir() or not (source / "lang/zh_CN.lang").is_file():
+        print(f"跳过缺失的任务书输入: {source}")
+        return
+    result = export_quests(source / "DefaultQuests", source / "lang/zh_CN.lang", Path(VERSION), dry_run=debug)
+    print(f"  [Quests] {result['questLines']} quest lines, {result['quests']} quests -> "
+          f"QuestLines {result['pages']['QuestLines']} / Quests {result['pages']['Quests']} file(s)")
+    if result["missing"]:
+        print(f"  [Quests] {len(result['missing'])} 项译文缺失，保留原文")
+    for warning in result["warnings"][:20]:
+        print(f"  [Quests] 警告（已保留源引用）: {warning}")
+
+
 def _fix_recipe_format(recipes: list, filepath: str) -> list:
     """修正非标准 NEI recipe 格式为标准格式。
     如果配方已经是标准格式（有 outputFluids / inputFluids / outputItems），
@@ -1886,6 +1909,7 @@ TASKS = {
     "gtmaterial": ("GtMaterial",   do_gtmaterial),
     "ticmaterial":("TicMaterial",  do_ticmaterial),
     "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
+    "quests":     ("Quests",       do_quests),
 }
 
 STANDALONE_TASKS = {

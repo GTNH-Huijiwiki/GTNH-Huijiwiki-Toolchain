@@ -1,52 +1,18 @@
-"""将 BetterQuesting DefaultQuests 和中文语言文件导出为 Wiki JSON 数据页。"""
+"""将 BetterQuesting DefaultQuests 和中文语言文件导出为 Wiki JSON 数据页（split_all.py quests）。
 
-import argparse
+输入来自 GTNH-Dumper 复制到 dumps/betterquesting/ 的任务书源文件。
+"""
+
 import base64
 import json
-import os
 from pathlib import Path
 import re
 import struct
-import sys
 import textwrap
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
-from databaseDump.bounded_json import DEFAULT_MAX_BYTES, validate_limit
-from databaseDump.data_version import title_part
+from bounded_json import DEFAULT_MAX_BYTES, validate_limit
 
 TYPE_SUFFIX = re.compile(r"^(.*):(\d+)$")
-CONFIG_KEYS = {"MINECRAFT_DIR", "MOD_REMOTE_NAME", "MOD_VERSION"}
-
-
-def load_config(env_file, *, keys=CONFIG_KEYS, required=None):
-    """仅读取所需配置；环境变量优先，不对 Windows 路径做反斜杠转义。"""
-    required = keys if required is None else required
-    config = {}
-    if env_file.is_file():
-        for line in env_file.read_text(encoding="utf-8-sig").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            key, sep, value = line.removeprefix("export ").partition("=")
-            key, value = key.strip(), value.strip()
-            if sep and key in keys:
-                if value.startswith(("'", '"')):
-                    quote = value[0]
-                    end = value.find(quote, 1)
-                    remainder = value[end + 1:].strip() if end >= 0 else ""
-                    if end < 0 or (remainder and not remainder.startswith("#")):
-                        raise ValueError(f"{env_file}: {key} 的引号格式无效")
-                    value = value[1:end]
-                else:
-                    value = re.split(r"\s+#", value, maxsplit=1)[0].rstrip()
-                config[key] = value
-    config.update({key: os.environ[key] for key in keys if key in os.environ})
-    for key in required:
-        if not config.get(key, "").strip():
-            raise ValueError(f"请在 {env_file} 或环境变量中设置 {key}")
-        config[key] = config[key].strip()
-    return config
 
 
 def read_lang(path):
@@ -259,44 +225,3 @@ def export_quests(source, lang, destination, *, max_bytes=DEFAULT_MAX_BYTES,
     return {"questLines": len(lines), "quests": len(quests), "missing": missing, "warnings": warnings,
             "pages": {category: len(content) for category, content in pages.items()},
             "maxPageBytes": max(len(data) for content in pages.values() for data in content)}
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file", type=Path, default=PROJECT_ROOT / ".env")
-    parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES,
-                        help="每个 JSON 页的 UTF-8 字节上限（默认 1800000，最大 2000000）")
-    parser.add_argument("--strict-translations", action="store_true", help="缺少译文时报错，不写入文件")
-    parser.add_argument("--dry-run", action="store_true", help="解析、校验并统计，不写入文件")
-    args = parser.parse_args(argv)
-    try:
-        config = load_config(args.env_file)
-        minecraft = Path(config["MINECRAFT_DIR"]).expanduser()
-        if not minecraft.is_absolute():
-            minecraft = args.env_file.resolve().parent / minecraft
-        destination = (PROJECT_ROOT / "wikitext/Data/Versions"
-                       / title_part(config["MOD_REMOTE_NAME"]) / title_part(config["MOD_VERSION"]))
-        result = export_quests(
-            minecraft / "config/betterquesting/DefaultQuests",
-            minecraft / "config/txloader/forceload/betterquesting/lang/zh_CN.lang",
-            destination, max_bytes=args.max_bytes,
-            strict_translations=args.strict_translations, dry_run=args.dry_run,
-        )
-    except (OSError, ValueError) as exc:
-        parser.exit(1, f"错误: {exc}\n")
-    print(f"{'校验完成' if args.dry_run else '生成完成'}: {destination}")
-    print(f"任务线 {result['questLines']}，任务 {result['quests']}；"
-          f"QuestLines {result['pages']['QuestLines']} 页，Quests {result['pages']['Quests']} 页；"
-          f"最大页面 {result['maxPageBytes']} 字节")
-    if result["missing"]:
-        print(f"警告: {len(result['missing'])} 项译文缺失，保留原文：", file=sys.stderr)
-        for key in result["missing"]:
-            print(f"  {key}", file=sys.stderr)
-    else:
-        print("标题和描述均已匹配中文语言文件。")
-    for warning in result["warnings"]:
-        print(f"警告（已保留源引用）: {warning}", file=sys.stderr)
-
-
-if __name__ == "__main__":
-    main()

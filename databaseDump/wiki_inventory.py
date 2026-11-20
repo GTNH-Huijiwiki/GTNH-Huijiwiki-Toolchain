@@ -2,14 +2,19 @@
 wiki_inventory.py
 扫描本地 wikitext/ 文件 + 查询 wiki 当前状态 → 生成任务清单。
 
-三种状态:
+四种状态:
     pending_upload   本地有文件 → wiki 上需要存在（新增或更新）
     pending_delete   wiki 上有页面，但本地已没有对应文件 → 需要删除
+    kept_online      wiki 上有、本地没有，但不删：保留目录（KEEP_ONLINE_DIRS），
+                     或本地整个目录缺失而未用 --delete-dir 点名
     done             本地和 wiki 已同步
 
+线上标题用 allpages 按前缀精确列举；比较时把下划线与空格视为同一字符。
+
 用法:
-    python wiki_inventory.py               # 增量更新
-    python wiki_inventory.py --refresh     # 全量重建
+    python wiki_inventory.py                          # 增量更新（本地未改动且已上传过的不再上传）
+    python wiki_inventory.py --refresh                # 全量重建：全部重新上传
+    python wiki_inventory.py --delete-dir Tc4research # 允许删除本地已整个移除的目录
 """
 
 import os
@@ -207,33 +212,45 @@ def scan_local_files() -> dict[str, tuple[float, int]]:
     return files
 
 
+# 工具链不生成、但线上需要保留的目录（版本目录下第一级）。
+# gtnhdimension：线上维度数据含 Dumper 尚未导出的字段，由他人于 2026-11-02 手工上传，暂作特例保留。
+KEEP_ONLINE_DIRS = frozenset({"gtnhdimension"})
+
+
+def canonical_title(title: str) -> str:
+    """MediaWiki 把下划线与空格视为同一字符；比较标题前统一为空格。"""
+    return " ".join(title.replace("_", " ").split())
+
+
+def top_directory(title: str) -> str:
+    """版本目录下的第一级目录名（如 Recipes）；配置模块等不在版本目录内的返回空串。"""
+    canonical, prefix = canonical_title(title), canonical_title(WIKI_PREFIX)
+    if not canonical.startswith(prefix):
+        return ""
+    rest = canonical[len(prefix):]
+    return rest.split("/", 1)[0] if "/" in rest else ""
+
+
 def fetch_wiki_titles() -> set[str]:
-    """从 wiki 抓取所有匹配前缀的页面标题（空格归一化为下划线）。"""
+    """列出线上该版本目录下的全部数据页（allpages 按前缀精确列举，不经搜索引擎）。"""
+    namespace, _, prefix = WIKI_PREFIX.partition(":")
+    ns_id = {"Data": 3500}[namespace]
     titles = set()
-    offset = 0
-    params = {
-        "action": "query",
-        "list": "prefixsearch",
-        "pssearch": WIKI_PREFIX,
-        "pslimit": 500,
-        "format": "json",
-    }
+    params = {"action": "query", "list": "allpages", "apnamespace": ns_id,
+              "apprefix": prefix, "aplimit": "max", "format": "json"}
     while True:
         r = _get(params)
-        batch = r["query"]["prefixsearch"]
-        for p in batch:
-            # MediaWiki 将 _ 和空格视为等价，统一为下划线
+        for p in r["query"]["allpages"]:
             if in_scope(p["title"], WIKI_PREFIX):
-                titles.add(p["title"].replace(" ", "_"))
-        print(f"  Fetched {len(batch)}, total: {len(titles)}")
-        if len(batch) < 500:
+                titles.add(p["title"])
+        if "continue" not in r:
             break
-        offset += len(batch)
-        params["psoffset"] = offset
+        params.update(r["continue"])
+    print(f"  Fetched {len(titles):,} titles")
     return titles
 
 
-def rebuild_tasks(refresh: bool):
+def rebuild_tasks(refresh: bool, delete_dirs=frozenset()):
     """扫描本地文件 + wiki 状态 → 重建任务清单。"""
     print("Scanning local files...")
     local_files = scan_local_files()
@@ -246,18 +263,18 @@ def rebuild_tasks(refresh: bool):
             for row in conn.execute(
                 "SELECT title, path, mtime, size FROM tasks WHERE status='done' AND path IS NOT NULL"
             ):
-                old_done[row[0]] = (row[1], row[2], row[3])
+                old_done[canonical_title(row[0])] = (row[1], row[2], row[3])
 
     login()
     print(f"Fetching wiki pages under '{WIKI_PREFIX}'...")
     wiki_titles = fetch_wiki_titles()
     print(f"  Found {len(wiki_titles):,} wiki pages")
 
-    # 构建 path → title 映射（本地文件可能对应同一个 title）
-    local_titles = {}  # title → path
+    # 按规范标题比较：本地路径用下划线，线上标题用空格，二者是同一页面。
+    local_titles = {}  # canonical title → path
     for rel_path in local_files:
-        title = path_to_title(rel_path)
-        local_titles[title] = rel_path
+        local_titles[canonical_title(path_to_title(rel_path))] = rel_path
+    local_dirs = {top_directory(path_to_title(rel_path)) for rel_path in local_files} - {""}
 
     tasks = []
     upload_count = 0
@@ -268,8 +285,8 @@ def rebuild_tasks(refresh: bool):
     for rel_path, (mtime, size) in sorted(local_files.items()):
         title = path_to_title(rel_path)
 
-        if title in old_done:
-            old_path, old_mtime, old_size = old_done[title]
+        if canonical_title(title) in old_done:
+            old_path, old_mtime, old_size = old_done[canonical_title(title)]
             if old_mtime == mtime and old_size == size and old_path == rel_path:
                 tasks.append((title, rel_path, "done", mtime, size))
                 done_count += 1
@@ -279,11 +296,22 @@ def rebuild_tasks(refresh: bool):
         tasks.append((title, rel_path, "pending_upload", mtime, size))
         upload_count += 1
 
-    # ② wiki 上有但本地没有的 → 待删除
+    # ② wiki 上有但本地没有的 → 待删除。
+    # 保留目录不删；整个目录在本地缺失时（例如拆分因缺输入而跳过），只有 --delete-dir 点名才删。
+    kept = {}
     for title in sorted(wiki_titles):
-        if title not in local_titles:
-            tasks.append((title, None, "pending_delete", None, None))
-            delete_count += 1
+        if canonical_title(title) in local_titles:
+            continue
+        directory = top_directory(title)
+        if directory in KEEP_ONLINE_DIRS or (directory not in local_dirs and directory not in delete_dirs):
+            tasks.append((title, None, "kept_online", None, None))
+            kept[directory] = kept.get(directory, 0) + 1
+            continue
+        tasks.append((title, None, "pending_delete", None, None))
+        delete_count += 1
+    for directory, count in sorted(kept.items()):
+        reason = "保留目录" if directory in KEEP_ONLINE_DIRS else "本地整个目录缺失，未用 --delete-dir 点名"
+        print(f"  Kept online {directory or '(root)'}/: {count} page(s) — {reason}")
 
     # 写入
     with closing(sqlite3.connect(DB_PATH)) as conn:
@@ -306,6 +334,7 @@ def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     refresh = "--refresh" in args
     stats_only = "--stats" in args
+    delete_dirs = frozenset(args[i + 1] for i, a in enumerate(args) if a == "--delete-dir" and i + 1 < len(args))
 
     if stats_only:
         stats = get_stats()
@@ -316,7 +345,7 @@ def main(argv=None):
         return
 
     init_db(refresh)
-    rebuild_tasks(refresh)
+    rebuild_tasks(refresh, delete_dirs)
 
     stats = get_stats()
     print(f"\nFinal: {stats}")

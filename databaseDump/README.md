@@ -65,7 +65,14 @@ MOD_VERSION=1.0.0
 修改配置后应重新运行拆分和清单脚本。缺少配置时，按报错提示补齐 `.env` 后重试。
 普通 Wiki 页面源码上传仍使用文件对应的页面路径。
 
-数据页（默认所说的“上传”只指这一部分）：
+数据页（默认所说的“上传”只指这一部分）。`wiki_inventory.py` 对照线上生成清单：本地有的上传，
+线上有而本地没有的删除；`data_upload.py` 在全部上传成功后才执行删除（`--no-delete` 只上传）。
+线上标题用 allpages 按前缀列举，比较时下划线与空格视为同一字符。以下情况不删除，记为 `kept_online`：
+
+- 保留目录 `KEEP_ONLINE_DIRS`：目前只有 `gtnhdimension/`（线上维度数据含 Dumper 尚未导出的字段，暂作特例）。
+- 本地整个目录都不存在（例如某个拆分任务因缺输入而跳过）。确实要移除整个目录时用
+  `python wiki_inventory.py --delete-dir <目录名>` 点名。
+
 
 ```bash
 python split_all.py
@@ -140,6 +147,41 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 扩展名规则：分类的 `Background` 字段指向的背景图是 `.webp`（有损），其余贴图保持原样的 `.png`。
 例如 `thaumcraft:textures/items/alumentum.png` 对应 `Thaumonomicon-Asset-thaumcraft-items-alumentum.png`。
 研究图标若是物品（`Icon` 字段），用物品图标，不在此列。
+
+## 任务书（Quests）
+
+`python split_all.py quests` 把任务书拆成两个目录，默认任务包含它：
+
+```text
+wikitext/Data/Versions/<远端模组名>/<版本>/
+  QuestLines/0.json, 1.json, ...
+  Quests/0.json, 1.json, ...
+```
+
+输入来自 GTNH-Dumper 复制到 `dumps/betterquesting/` 的源文件（与其他数据同一次导出）：
+`DefaultQuests/`（任务、任务线、`QuestLinesOrder.txt`）和 `lang/zh_CN.lang`。只有 `MOD_LOCAL_NAME=GTNH` 处理，
+输入缺失时跳过。实现在 `quests.py`，随 `wiki_inventory.py` 与 `data_upload.py` 一起上传；
+原来单独的 `questUpload/` 工具已并入。每页最多 1,800,000 字节，两空格缩进。
+
+### 数据结构
+
+任务线页面根字段为 `questLines` 数组，任务页面为 `quests` 数组。记录保留源字段，按以下规则整理：
+
+- NBT 字段的 `:数字` 类型后缀移除，`:9` 列表按数字索引排序并转换为 JSON 数组。
+- 所有 `…IDHigh:4` / `…IDLow:4` 对合并为 `…ID` 字符串：两个有符号 long
+  以大端排列，URL-safe Base64 编码并去掉 `=`。任务 ID、任务线 ID、前置引用和布局引用使用相同格式，
+  不会经过浮点数；其他 NBT long 也保存为十进制字符串，避免 Wiki/JavaScript 丢失精度。
+- `properties.betterquesting.originalName` / `originalDesc` 保留源文件中的英文，
+  `name` / `desc` 分别通过
+  `betterquesting.quest.<ID>.name/desc` 或 `betterquesting.questline.<ID>.name/desc` 汉化。
+  汉化字段中的 `%n` 转为真正换行；保留 `§` 格式码及 `[url]`、`[note]` 等任务书标签供展示端处理。
+- 任务保留 `preRequisites`、`tasks`、`rewards` 和全部属性，物品及其 NBT 不裁剪。
+- 任务线增加 `quests` 数组，包含 `questID`、`x`、`y`、`sizeX`、`sizeY` 等原布局字段；
+  增加从 0 开始的 `order`，按 `QuestLinesOrder.txt` 顺序输出。
+- 同一个任务可出现在多条任务线中，任务正文只输出一次。
+
+缺少汉化时保留原文并打印缺失键。
+源任务书中指向缺失任务的引用会保留并警告。重复 ID、无效 JSON、任务线顺序不一致等错误会阻止写入。
 
 ## 配方输入与输出归类
 
