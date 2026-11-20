@@ -175,7 +175,7 @@ def init_tables(conn):
 
 def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=16) -> dict:
     """为待更新图标查线上文件并做判定，结果写回状态库；返回统计。"""
-    from image_state import set_uploaded
+    from image_state import _load_exempt, set_uploaded
     with closing(sqlite3.connect(db_path)) as conn:
         init_tables(conn)
         rows = conn.execute(
@@ -193,6 +193,7 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
     stats['notOnWiki'] = len(rows) - len(files)
     to_compare = []
     with closing(sqlite3.connect(db_path)) as conn, conn:
+        _load_exempt(conn, exempt)
         for name, content, _ in rows:
             info = files.get(name)
             if info is None:
@@ -223,6 +224,10 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
             else:
                 stats['visualSame' if same else 'changed'] += 1
                 conn.execute('INSERT OR REPLACE INTO visual_checks VALUES (?, ?, ?)', (wiki_sha1, content, int(same)))
+                if same:
+                    # 立即生效，同一次上传不会再传视觉相同的图。
+                    conn.execute("UPDATE images SET icon_state='已上传' WHERE icon_name=? "
+                                 "AND uploaded_sha1=? AND content_sha1=?", (name, wiki_sha1, content))
             if done % 1000 == 0:
                 conn.commit()
                 print(f'  compared {done:,}/{len(to_compare):,}', flush=True)

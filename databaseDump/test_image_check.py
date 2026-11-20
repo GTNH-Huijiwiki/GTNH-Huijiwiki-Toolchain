@@ -93,11 +93,26 @@ class StateTest(unittest.TestCase):
                 patch('image_check.download', side_effect=lambda url, sha1, cache: remote[url]):
             stats = image_check.check_pending(self.db, icons_dir, set(local), {}, Path(self.tmp.name), threads=2)
             self.assertEqual((stats['visualSame'], stats['changed'], stats['notOnWiki']), (1, 1, 1))
+            # 判定立即生效，不必等下一次 update_state
+            self.assertEqual(self.states(), {'same.png': '已上传', 'moved.png': '待更新', 'new.png': '待更新'})
             update_state(self.db, set(local), {}, hashes)
             self.assertEqual(self.states(), {'same.png': '已上传', 'moved.png': '待更新', 'new.png': '待更新'})
             image_check.check_pending(self.db, icons_dir, set(local), {}, Path(self.tmp.name), threads=2)
             # 已判定为变化的不再查询，只剩线上不存在的
             self.assertEqual(sorted(query.call_args.args[0]), ['new.png'])
+
+
+class ExemptOnCheckTest(unittest.TestCase):
+    setUp, tearDown, states = StateTest.setUp, StateTest.tearDown, StateTest.states
+
+    def test_exempt_icon_settles_when_its_online_file_is_found(self):
+        icons_dir = Path(self.tmp.name)
+        (icons_dir / 'anim.png').write_bytes(png((1, 1, 1, 255)))
+        update_state(self.db, {'anim.png'}, {}, {'anim.png': 'L1'}, {'anim.png'})
+        with patch('image_check.wiki_files', return_value={'anim.png': {'sha1': 'W1', 'url': 'u'}}),                 patch('image_check.download', side_effect=AssertionError('exempt icons are not compared')):
+            stats = image_check.check_pending(self.db, icons_dir, {'anim.png'}, {'anim.png': 'animated'}, icons_dir)
+        self.assertEqual(stats['exempt'], 1)
+        self.assertEqual(self.states(), {'anim.png': '已上传'})
 
 
 class HashCacheTest(unittest.TestCase):
