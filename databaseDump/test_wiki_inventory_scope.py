@@ -56,12 +56,23 @@ class DeleteAfterUploadTest(InventoryScopeTest):
         self.enterContext(patch.multiple(data_upload, WIKITEXT_DIR=str(self.wikitext),
                                          TASK_DB=str(self.db), WIKI_PREFIX=PREFIX))
 
-    def run_upload(self, edit_error=None):
+    def run_upload(self, edit_error=None, args=(), uploads=None):
         import http.cookiejar
         self.rebuild({'Recipes/gregtech/a/00/0.json'})
-        with patch.object(self.data_upload, 'login_once', return_value=http.cookiejar.CookieJar()),                 patch.object(self.data_upload.signal, 'signal'),                 patch.object(self.data_upload, 'edit_page', side_effect=edit_error, return_value={}),                 patch.object(self.data_upload, 'delete_page', return_value={}) as delete:
-            self.data_upload.main([])
+        with patch.object(self.data_upload, 'login_once', return_value=http.cookiejar.CookieJar()),                 patch.object(self.data_upload.signal, 'signal'),                 patch.object(self.data_upload, 'edit_page', side_effect=edit_error, return_value={}) as edit,                 patch.object(self.data_upload, 'delete_page', return_value={}) as delete:
+            self.data_upload.main(list(args))
+        if uploads is not None:
+            uploads.extend(call.args[1].removeprefix(PREFIX) for call in edit.call_args_list)
         return [call.args[1] for call in delete.call_args_list]
+
+    def test_only_limits_uploads_and_deletes_to_selected_directories(self):
+        uploads = []
+        self.assertEqual(self.run_upload(args=['--only', 'Quests'], uploads=uploads), [])
+        self.assertEqual(uploads, ['Quests/0.json'])
+        uploads.clear()
+        self.assertEqual(self.run_upload(args=['--only', 'Recipes'], uploads=uploads),
+                         [PREFIX + 'Recipes/gregtech/a/00/0.json'])
+        self.assertEqual(sorted(uploads), ['Recipes/forestry/BeeBreedingHandler_null/0.json', 'Recipes/gregtech/a/0.json'])
 
     def test_failed_upload_postpones_deletes(self):
         self.assertEqual(self.run_upload(RuntimeError('boom')), [])

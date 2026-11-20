@@ -73,6 +73,23 @@ MOD_VERSION=1.0.0
 - 本地整个目录都不存在（例如某个拆分任务因缺输入而跳过）。确实要移除整个目录时用
   `python wiki_inventory.py --delete-dir <目录名>` 点名。
 
+### 只处理一部分数据
+
+反复迭代某一份数据（魔导手册、维度、任务书、匠魂材料等）时，拆分和上传都可以只做这一块：
+
+```bash
+python split_all.py thaumonomicon dimensions                       # 只拆分这两项
+python wiki_inventory.py                                           # 清单（增量，不要加 --refresh）
+python data_upload.py --only Thaumonomicon gtnhdimension           # 只上传、删除这两个目录
+```
+
+`--only` 后面跟版本目录下的第一级目录名（`Items`、`ItemNames`、`Recipes`、`OreDictionary`、`Ores`、`Aspects`、`Gtmaterial`、
+`Ticmaterial`、`Thaumonomicon`、`Quests`、`QuestLines`、`gtnhdimension`），直到下一个 `-` 开头的参数为止。
+上传和删除都只限这些目录；版本配置模块仍要等整个版本的数据页都上传完才发布。
+拆分任务与目录的对应：`thaumonomicon` → `Thaumonomicon`，`dimensions` → `gtnhdimension`，`quests` → `Quests`、`QuestLines`，
+`ticmaterial` → `Ticmaterial`，`gtmaterial` → `Gtmaterial`、`Ores`；`items` 还会刷新 `ItemNames`、`Aspects`。
+Dumper 端可用自动导出的 `tasks` 只导出对应数据（见 GTNH-Dumper README“只导出部分数据”）。
+
 
 ```bash
 python split_all.py
