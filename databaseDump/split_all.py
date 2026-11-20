@@ -764,8 +764,42 @@ def do_items(debug: bool):
     if debug:
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
+    _attach_ore_dictionaries(items)
     write_item_names(items)
     clear_generated_pages(Path(VERSION) / "Items", {".tabx"})
+
+
+def attach_ore_dictionaries(items, entries):
+    """矿辞反向写回物品：属于矿辞的物品加 "oredict": [矿辞名, ...]，顺序与导出一致。
+
+    成员解析与 OreDictionary/ 页相同（normalize_ore_dictionary：:32767 通配展开为已导出的子类型），
+    两边结果一致。返回带矿辞的物品数。
+    """
+    flat, _ = normalize_ore_dictionary(entries, items)
+    by_key = defaultdict(list)
+    for ore, members in flat.items():
+        for key in members:
+            by_key[key].append(ore)
+    count = 0
+    for item in items:
+        ores = by_key.get(item["key"])
+        if ores:
+            item["oredict"] = ores
+            count += 1
+        else:
+            item.pop("oredict", None)
+    return count
+
+
+def _attach_ore_dictionaries(items):
+    path = os.path.join(DUMPS_DIR, "oreDictionary.json")
+    if not os.path.isfile(path) or not os.path.getsize(path):
+        print(f"  [OreDict] 跳过：缺少 {path}，物品不带 oredict 字段")
+        return
+    with open(path, "r", encoding="utf-8") as stream:
+        entries = json.load(stream)["oreDictionaries"]
+    count = attach_ore_dictionaries(items, entries)
+    print(f"  [OreDict] {count:,} items carry an oredict list")
 
 
 def _scan_schema(items: list) -> list[dict]:
@@ -878,6 +912,7 @@ def do_items_tabx(debug: bool):
     if debug:
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
+    _attach_ore_dictionaries(items)
     write_item_tables(items)
     write_item_names(items, write_items=False)
 
