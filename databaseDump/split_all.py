@@ -514,27 +514,6 @@ def _regress_nbt_only_items(items: list):
 # Custom item injection
 # ============================================================
 
-def _inject_custom_items(items: list):
-    """注入编程电路配置 1~24；对应图片允许在当前导出中缺失。"""
-    n = len(items)
-
-    # 编程电路 (gregtech:gt.integrated_circuit) — 配置 1~24
-    for i in range(1, 25):
-        items.append({
-            "shortKey": f"gregtech:gt.integrated_circuit:{i}",
-            "key": f"gregtech:gt.integrated_circuit:{i}",
-            "originalName": "Programmed Circuit",
-            "translatedName": f"编程电路{i}",
-            "tooltips": f"编程电路<br>配置== {i}<br>右键以重新配置<br>需要螺丝刀或编程工具",
-            "mod": "GregTech",
-            "iconName": f"icon_gregtech_gt.integrated_circuit_{i}.png",
-            "size": 16,
-            "frameCount": 1,
-        })
-
-    print(f"  Injected {len(items) - n} custom items ({n} -> {len(items)})")
-
-
 # ============================================================
 # Tasks
 # ============================================================
@@ -723,9 +702,6 @@ def do_items(debug: bool):
     fluid_map = _load_fluid_map()
     _merge_fluid_data(items, fluid_map)
 
-    # ③ 注入自定义条目
-    _inject_custom_items(items)
-
     # ④ 清理无效格式码
     _clean_tooltips(items)
 
@@ -878,9 +854,6 @@ def do_items_tabx(debug: bool):
     # ② 合并 fluid.json 数据（改写 GregTech_FluidDisplay → fluid.key）
     fluid_map = _load_fluid_map()
     _merge_fluid_data(items, fluid_map)
-
-    # ③ 注入自定义条目
-    _inject_custom_items(items)
 
     # ④ 清理无效格式码
     _clean_tooltips(items)

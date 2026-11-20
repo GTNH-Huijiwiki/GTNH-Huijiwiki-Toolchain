@@ -34,17 +34,6 @@ class NameRoutingTests(unittest.TestCase):
                                      'File:任务指南.png': 'File:book.png'})
         self.assertFalse(unresolved or invalid)
 
-    def test_custom_circuits_are_injected_for_all_sources(self):
-        from split_all import _inject_custom_items
-        original = {'key': 'programmablehatches:example'}
-        for mod in ('programmablehatches', 'Example', 'GTNH'):
-            with self.subTest(mod=mod), patch.dict(os.environ, {'MOD_LOCAL_NAME': mod}):
-                items = [original.copy()]
-                _inject_custom_items(items)
-                self.assertEqual(items[0], original)
-                self.assertEqual([item['key'] for item in items[1:]],
-                                 [f'gregtech:gt.integrated_circuit:{i}' for i in range(1, 25)])
-
     def test_image_mod_priority_and_variant_preferences(self):
         keys = ['minecraft:stone', 'fluid.stone', 'gregtech:stone', 'IC2:stone', 'other:stone']
         for start, expected in enumerate(keys):

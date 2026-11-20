@@ -301,8 +301,7 @@ class SplitOutputTests(unittest.TestCase):
             for row in items]}))
         (self.source / "fluid.json").write_bytes(encode_json({"fluids": []}))
         (self.version / "Items/0.json").write_text('{"items":[]}', "utf-8")
-        with patch.object(split_all, "_inject_custom_items"), \
-             patch.object(split_all, "image_name_config", return_value=self.state / "choices.json"):
+        with patch.object(split_all, "image_name_config", return_value=self.state / "choices.json"):
             split_all.do_items(False)
             json_items = sorted(read_items(self.version / "Items"), key=lambda row: row["key"])
             self.assertEqual(json_items[0]["index"], "source-index")
