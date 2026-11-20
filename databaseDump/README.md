@@ -65,11 +65,18 @@ MOD_VERSION=1.0.0
 修改配置后应重新运行拆分和清单脚本。缺少配置时，按报错提示补齐 `.env` 后重试。
 普通 Wiki 页面源码上传仍使用文件对应的页面路径。
 
+数据页（默认所说的“上传”只指这一部分）：
+
 ```bash
 python split_all.py
 python wiki_inventory.py
-python image_inventory.py
 python data_upload.py
+```
+
+图片（只在明确要求上传图片时运行；“全量上传”也要先确认是否包含图片）：
+
+```bash
+python image_inventory.py
 python image_upload.py
 python image_redirect.py
 ```
