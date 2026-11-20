@@ -741,6 +741,7 @@ def do_items(debug: bool):
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
     _attach_ore_dictionaries(items)
+    _attach_item_links(items)
     write_item_names(items)
     clear_generated_pages(Path(VERSION) / "Items", {".tabx"})
 
@@ -772,6 +773,119 @@ def require_ore_entries(entries, path):
     if not entries:
         raise ValueError(f"矿辞导出为空：{path}。请检查 Dumper 的矿辞导出后重新导出，不要用这份数据拆分或上传。")
     return entries
+
+
+# ── 物品与研究、任务的反向关联 ─────────────────────────────────
+# 规则与线上一致：研究见 模块:Thaumonomicon 的 related，任务见 模块:Database/Quests 的 itemCondition。
+
+def _stack_key(value):
+    """研究里的物品写作字符串或 {key, nbt}；附魔等没有 key 的产物返回 None。"""
+    if isinstance(value, dict):
+        value = value.get("key")
+    return value if isinstance(value, str) and value and not value.startswith("#") else None
+
+
+def research_keys_by_item(data) -> dict:
+    """物品 key（研究中出现的写法）→ 研究 Key 列表；只收非虚拟、且有分类的研究。
+
+    命中位置：研究图标（没有贴图资源时）、物品扫描条件、页面产物与页面配方产物。
+    """
+    categories = set(data.get("categories", {}))
+    index = defaultdict(list)
+    for research in data.get("researches", {}).values():
+        if research.get("IsVirtual") or research.get("CategoryKey") not in categories:
+            continue
+        refs = [] if research.get("IconResource") else [research.get("Icon")]
+        refs += research.get("ItemTriggerItems") or []
+        for page in research.get("Pages") or []:
+            refs.append(page.get("output"))
+            refs += [recipe.get("output") for recipe in page.get("recipes") or [] if isinstance(recipe, dict)]
+        for key in dict.fromkeys(filter(None, map(_stack_key, refs))):
+            index[key].append(research["Key"])
+    return index
+
+
+def research_candidates(key: str) -> list:
+    """带非零 meta 的 key 匹配自身与 :32767；无 meta 或 :0 匹配 base、base:0、base:32767。"""
+    base, sep, meta = key.rpartition(":")
+    if sep and meta.isdigit() and int(meta) not in (0, 32767):
+        return [key, base + ":32767"]
+    base = base if sep and meta.isdigit() else key
+    return [base, base + ":0", base + ":32767"]
+
+
+def quest_ids_by_item(quests) -> dict:
+    """堆栈 key（id 加非零 :Damage，流体为 fluid.名称）→ 任务 ID 列表。
+
+    命中位置：任务图标、任务要求的物品与流体、奖励与可选奖励。
+    """
+    def values(container):
+        if isinstance(container, dict):
+            return list(container.values())
+        return container if isinstance(container, list) else []
+
+    def stack_key(stack):
+        if not isinstance(stack, dict):
+            return None
+        if isinstance(stack.get("FluidName"), str):
+            return "fluid." + stack["FluidName"]
+        if isinstance(stack.get("id"), str):
+            damage = int(stack.get("Damage") or 0)
+            return stack["id"] + (f":{damage}" if damage else "")
+        return None
+
+    index = defaultdict(list)
+    for quest in quests:
+        stacks = [quest.get("properties", {}).get("betterquesting", {}).get("icon")]
+        for task in values(quest.get("tasks")):
+            if isinstance(task, dict):
+                stacks += values(task.get("requiredItems")) + values(task.get("requiredFluids"))
+        for reward in values(quest.get("rewards")):
+            if isinstance(reward, dict):
+                stacks += values(reward.get("rewards")) + values(reward.get("choices"))
+        for key in dict.fromkeys(filter(None, map(stack_key, stacks))):
+            index[key].append(quest["questID"])
+    return index
+
+
+def attach_item_links(items, research_index, quest_index):
+    """给物品加 researchKeys / questIds（无关联则不加）；返回 (带研究的物品数, 带任务的物品数)。
+
+    研究用 key 与 rawKey 的候选写法匹配；任务用 rawKey（缺省为 key）精确匹配，与条目页查询相同。
+    """
+    with_research = with_quests = 0
+    for item in items:
+        keys = [k for k in (item.get("key"), item.get("rawKey")) if k]
+        research = list(dict.fromkeys(r for k in keys for c in research_candidates(k) for r in research_index.get(c, ())))
+        quests = sorted(set(quest_index.get(item.get("rawKey") or item.get("key"), ())))
+        for field, values in (("researchKeys", research), ("questIds", quests)):
+            if values:
+                item[field] = values
+            else:
+                item.pop(field, None)
+        with_research += bool(research)
+        with_quests += bool(quests)
+    return with_research, with_quests
+
+
+def _attach_item_links(items):
+    if local_mod_name() != "GTNH":
+        return
+    research_index, quest_index = {}, {}
+    thaumonomicon = Path(DUMPS_DIR) / "tc4thaumonomicon.json"
+    if thaumonomicon.is_file() and thaumonomicon.stat().st_size:
+        research_index = research_keys_by_item(json.loads(thaumonomicon.read_text(encoding="utf-8")))
+    source = Path(DUMPS_DIR) / "betterquesting"
+    if (source / "DefaultQuests").is_dir():
+        from quests import build_records, read_lang
+        lang = source / "lang/zh_CN.lang"
+        _, quests, _, _ = build_records(source / "DefaultQuests", read_lang(lang) if lang.is_file() else {})
+        quest_index = quest_ids_by_item(quests)
+    if not research_index and not quest_index:
+        print("  [Links] 跳过：缺少魔导手册与任务书输入")
+        return
+    with_research, with_quests = attach_item_links(items, research_index, quest_index)
+    print(f"  [Links] {with_research:,} items carry researchKeys; {with_quests:,} carry questIds")
 
 
 def _attach_ore_dictionaries(items):
@@ -893,6 +1007,7 @@ def do_items_tabx(debug: bool):
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
     _attach_ore_dictionaries(items)
+    _attach_item_links(items)
     write_item_tables(items)
     write_item_names(items, write_items=False)
 

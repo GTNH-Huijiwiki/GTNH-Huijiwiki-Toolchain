@@ -407,7 +407,12 @@ Lua 查询一次读取命中名称桶的所有分页，使用 `$objectToArray` �
 保存每个物品的完整记录，包括名称、说明、图片映射、NBT 和原 `index`。
 原 `Items/` 根目录数字顺序分页在生成成功后清理，只保留一份物品数据。
 属于矿辞的物品带 `oredict` 列表（如 `"oredict": ["ingotSteel", "ingotAnySteel"]`，顺序同导出）：由 `oreDictionary.json`
-反向写回，成员解析与 `OreDictionary/` 页相同（`:32767` 通配展开为已导出的子类型），两边一致；不属于任何矿辞的物品没有该字段。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
+反向写回，成员解析与 `OreDictionary/` 页相同（`:32767` 通配展开为已导出的子类型），两边一致；不属于任何矿辞的物品没有该字段。
+有关联的物品还带 `researchKeys`（魔导手册研究 Key）与 `questIds`（任务 ID），规则与线上条目页的查询相同，没有关联则不带：
+研究——非虚拟、有分类的研究，以该物品为图标（没有贴图资源时）、物品扫描条件或页面（配方）产物；物品的 `key` 与 `rawKey`
+按 meta 规则扩展候选（非零 meta 匹配自身与 `:32767`，无 meta 或 `:0` 匹配 base、base:0、base:32767），见 模块:Thaumonomicon 的 related。
+任务——任务图标、要求的物品与流体、奖励与可选奖励中的堆栈（`id` 加非零 `:Damage`，流体 `fluid.名称`）与物品 `rawKey`（缺省为 `key`）
+精确相等，见 模块:Database/Quests。两者都只在 `MOD_LOCAL_NAME=GTNH` 时生成，输入为同一导出的 `tc4thaumonomicon.json` 与 `betterquesting/`。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
 同一桶超过大小限制时需要读取该桶的所有分块。
 
 ### 可选配方分桶
