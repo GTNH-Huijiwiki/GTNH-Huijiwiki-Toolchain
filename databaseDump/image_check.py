@@ -128,20 +128,32 @@ def _api(params: dict) -> dict:
         return json.loads(response.read())
 
 
-def wiki_files(names) -> dict[str, dict]:
-    """文件名 → {'sha1', 'url'}；线上不存在的不返回。"""
+def wiki_files(names, threads=8) -> dict[str, dict]:
+    """文件名 → {'sha1', 'url'}；线上不存在的不返回。每批 50 个标题，多线程并发查询。"""
     from item_names import canonical_file
     names = sorted(names)
+    batches = [names[offset:offset + 50] for offset in range(0, len(names), 50)]
+
+    def query(batch):
+        for attempt in range(3):
+            try:
+                return batch, _api(dict(action='query', titles='|'.join('File:' + n for n in batch),
+                                        prop='imageinfo', iiprop='sha1|url'))
+            except OSError:
+                if attempt == 2:
+                    raise
+                time.sleep(2 * (attempt + 1))
+
     result = {}
-    for offset in range(0, len(names), 50):
-        batch = names[offset:offset + 50]
-        data = _api(dict(action='query', titles='|'.join('File:' + n for n in batch),
-                         prop='imageinfo', iiprop='sha1|url'))
-        by_title = {canonical_file(p['title'].split(':', 1)[1]): p for p in data['query']['pages']}
-        for name in batch:
-            info = (by_title.get(canonical_file(name), {}).get('imageinfo') or [None])[0]
-            if info:
-                result[name] = {'sha1': info['sha1'], 'url': info['url']}
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        for done, (batch, data) in enumerate(pool.map(query, batches), 1):
+            by_title = {canonical_file(p['title'].split(':', 1)[1]): p for p in data['query']['pages']}
+            for name in batch:
+                info = (by_title.get(canonical_file(name), {}).get('imageinfo') or [None])[0]
+                if info:
+                    result[name] = {'sha1': info['sha1'], 'url': info['url']}
+            if done % 100 == 0:
+                print(f'  queried {done * 50:,}/{len(names):,} wiki files', flush=True)
     return result
 
 
