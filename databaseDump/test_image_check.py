@@ -118,6 +118,22 @@ class HashCacheTest(unittest.TestCase):
             self.assertNotEqual(icon_hashes(root, {'a.png'}, cache), first)
 
 
+class DumperHashPlanTest(unittest.TestCase):
+    def test_plan_groups_by_manifest_without_decoding(self):
+        from image_plan import build_plan
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ('a.png', 'a_v.png', 'a_w.png'):
+                (root / name).write_bytes(b'not decoded')
+            items = [{'key': 'm:a', 'shortKey': 'a', 'icon': 'a.png'},
+                     {'key': 'm:a', 'shortKey': 'a_v', 'nbt': '{x:1}', 'icon': 'a_v.png'},
+                     {'key': 'm:a', 'shortKey': 'a_w', 'nbt': '{x:2}', 'icon': 'a_w.png'}]
+            with patch('image_plan.pixel_hash', side_effect=AssertionError('decoded')):
+                plan = build_plan(items, [], root, {}, pixel_hashes={'a.png': 'h1', 'a_v.png': 'h1', 'a_w.png': 'h2'})
+            self.assertEqual(plan['keyAliases'], {'a_v.png': 'a.png'})
+            self.assertEqual(plan['uploadIcons'], ['a.png', 'a_w.png'])
+
+
 class StabilityTest(unittest.TestCase):
     def test_unstable_list_only_grows(self):
         with tempfile.TemporaryDirectory() as tmp:
