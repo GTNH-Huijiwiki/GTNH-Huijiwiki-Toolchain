@@ -198,6 +198,9 @@ def upload_one(opener, path: str, bot: bool = True) -> dict:
             err = r["error"]["info"]
             if "Invalid CSRF" in err and attempt == 0:
                 continue
+            if r["error"].get("code") == "fileexists-no-change":
+                # 同名文件的当前版本与本次内容完全相同（常见于上次请求已成功但响应中断）。
+                return {"result": "Success", "_payload_sha1": hashlib.sha1(file_data).hexdigest()}
             raise RuntimeError(err)
         result = r["upload"]
         result["_payload_sha1"] = hashlib.sha1(file_data).hexdigest()
