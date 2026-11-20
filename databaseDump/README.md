@@ -158,8 +158,10 @@ NEI 的附加槽位。已确认的燃料、灌注台试剂和作物基因提取�
 GTNH 保留已有数据库和上传记录。图片任务只选择当前来源中存在的文件，重定向任务只选择当前 CSV
 计划中仍有效且目标图片已上传的记录。失败的图片保持待更新状态，重复运行可以重试。
 
-三个图片脚本都会在执行前通过 `image_plan.py` 重新计算当前 PNG 的哈希，需要安装 Pillow：
-`python -m pip install Pillow`。运行 `image_inventory.py` 生成本地计划和状态，随后由上传脚本执行。
+三个图片脚本都会在执行前通过 `image_plan.py` 生成去重计划，需要安装 Pillow：
+`python -m pip install Pillow`。数据源带有 GTNH-Dumper 的 `icon-hashes.json` 时，直接用其中的像素哈希按当前导出重建分组，
+不解码图片；没有清单时沿用已保存的计划。文件 sha1 按（文件名、大小、修改时间）缓存在
+`source_state/file-sha1-cache.json`，重跑时未变化的文件不再读取。运行 `image_inventory.py` 生成本地计划和状态，随后由上传脚本执行。
 计划保存在同一状态目录的 `image-upload-plan.json`，包含实体上传列表、最终重定向和各组哈希。
 
 只在同一注册物品 `modid:name` 内比较不同 damage/NBT 变体。哈希覆盖尺寸与完整 RGBA
