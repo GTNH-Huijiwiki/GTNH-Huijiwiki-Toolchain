@@ -176,6 +176,19 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 数组名仍为 `abbreviatedName`；其余字段（维度 ID、Provider 参数、`galacticSpaceInfo` 等）和 `key` 原样保留。
 旧版 Dumper 的 `{"abbreviatedName": [...]}` 原样通过。字段含义见 GTNH-Dumper README 的“维度与星系参数”。
 
+## 生物群系（Biomes）
+
+`python split_all.py biomes` 读 GTNH-Dumper 的 `biomes.json`，默认任务包含它，只有 `MOD_LOCAL_NAME=GTNH` 处理：
+
+| 目录 | 内容 |
+|---|---|
+| `Biomes/N.json` | 数组 `biomes`，每个已注册群系一条：ID、英文名、类、温度、降水、高湿度、降雪、降雨、打雷、根高度、高度变化、颜色、地表与填充方块、BiomeDictionary 标签、林业气候、IC2 作物加成、各类生物的刷怪表（实体、权重、群组大小）、生态之书扩展版页码 |
+| `BiomeBooks/0.json` | 巫术的两本书：`bookOfBiomes`（季节变迁仪式指南，每类群系一页）与 `bookOfBiomesExtended`（每个群系一页，含游戏内显示的降雨、温度、降雪、打雷四行，中英文各一份，以及分节） |
+
+游戏里没有群系名、标签和林业气候的中文，拆分时从 `config/biome_names.json` 补 `nameZh`、`typesZh`、
+`forestryTemperatureZh`、`forestryHumidityZh`。群系按 ID → 英文名加书页码 → 唯一的英文名匹配；缺中文名的会列出来，补进配置即可。
+这份配置最初取自人工整理的 `Data:生物群系.json`（线上 `模块:生态之书群系表`、`模块:生物群系表`、`模块:蜜蜂` 目前仍读那份旧数据）。
+
 ## 任务书（Quests）
 
 `python split_all.py quests` 把任务书拆成两个目录，默认任务包含它：

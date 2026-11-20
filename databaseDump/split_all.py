@@ -1584,6 +1584,65 @@ def do_dimensions(debug: bool):
     print(f"  {len(rows):,} dimensions ({galactic} with galacticSpaceInfo) -> {len(written)} file(s)")
 
 
+BIOME_NAMES_CONFIG = Path(AUX_DIR) / "config" / "biome_names.json"
+
+
+def localize_biomes(biomes, names) -> list:
+    """给群系补中文：nameZh、typesZh、forestryTemperatureZh、forestryHumidityZh；返回缺中文名的群系。
+
+    群系名匹配顺序：群系 ID → 英文名加生态之书页码 → 唯一的英文名（同名群系必须靠前两种区分）。
+    """
+    by_id = {entry["id"]: entry["zh"] for entry in names["biomes"] if "id" in entry}
+    by_pages = {(entry["name"], tuple(entry.get("bookPages", ()))): entry["zh"] for entry in names["biomes"]}
+    counts = Counter(entry["name"] for entry in names["biomes"])
+    by_name = {entry["name"]: entry["zh"] for entry in names["biomes"] if counts[entry["name"]] == 1}
+    missing = []
+    for biome in biomes:
+        zh = by_id.get(biome["id"]) or by_pages.get((biome["name"], tuple(biome.get("bookPages", ()))))             or by_name.get(biome["name"])
+        if zh:
+            biome["nameZh"] = zh
+        else:
+            missing.append(biome["name"])
+        biome["typesZh"] = [names["types"].get(tag, tag) for tag in biome.get("types", [])]
+        for field, table in (("forestryTemperature", "forestryTemperature"), ("forestryHumidity", "forestryHumidity")):
+            if biome.get(field):
+                biome[field + "Zh"] = names[table].get(biome[field], biome[field])
+    return missing
+
+
+def do_biomes(debug: bool):
+    """biomes.json -> Biomes/N.json（群系）与 BiomeBooks/0.json（巫术的两本生态之书）。
+
+    群系记录保留 Dumper 的全部字段（温湿度、降水与降雪、高度、方块、BiomeDictionary 标签、林业气候、
+    IC2 作物加成、刷怪表、生态之书扩展版页码），另补中文名与标签、气候的中文（config/biome_names.json）。
+    只有 GTNH 处理；附属模组和缺少输入时跳过。
+    """
+    print("=" * 50)
+    print("[Biomes]")
+    print("=" * 50)
+    if local_mod_name() != "GTNH":
+        print("  跳过群系：只属于 GTNH 整合包")
+        return
+    path = Path(DUMPS_DIR) / "biomes.json"
+    if not path.is_file() or not path.stat().st_size:
+        print(f"  跳过缺失或空的群系输入: {path}")
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    biomes = data["biomes"]
+    missing = localize_biomes(biomes, json.loads(BIOME_NAMES_CONFIG.read_text(encoding="utf-8")))
+    output = Path(VERSION) / "Biomes"
+    written = write_array_pages(biomes, {}, "biomes", output, HARD_MAX_BYTES)
+    if not debug:
+        clear_generated_pages(output, {".json"}, keep=written)
+    books = {key: data[key] for key in ("bookOfBiomes", "bookOfBiomesExtended") if key in data}
+    if books:
+        write_bounded(Path(VERSION) / "BiomeBooks" / "0.json", encode_json(books), HARD_MAX_BYTES)
+    extended = len(books.get("bookOfBiomesExtended", {}).get("pages", []))
+    print(f"  {len(biomes):,} biomes -> {len(written)} file(s); book pages: {extended}")
+    if missing:
+        print(f"  {len(missing)} 个群系没有中文名（补到 config/biome_names.json）: {', '.join(missing[:20])}")
+
+
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
 # 页内数组字段名是线上 Lua 做 $unwind 时使用的名字，改动会破坏查询，需与 Lua 同步。
 # 魔导手册的贴图不由本工具处理，已一次性上传到 File:Thaumonomicon-Asset-*，命名规则见 README。
@@ -2087,6 +2146,7 @@ TASKS = {
     "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
     "quests":     ("Quests",       do_quests),
     "dimensions": ("Dimensions",   do_dimensions),
+    "biomes":     ("Biomes",       do_biomes),
 }
 
 STANDALONE_TASKS = {

@@ -1,0 +1,2068 @@
+{
+ "description": "群系中文名、BiomeDictionary 标签与林业气候的中文译名。游戏里没有这些翻译，最初取自人工整理的 Data:生物群系.json（2026-11-03 核对）。群系匹配顺序：群系 ID → 英文名加生态之书页码 → 唯一的英文名。新群系缺译名时拆分会列出，补在这里。 2026-11-21 起按 GTNH 2.9.0 导出补上了群系 ID。",
+ "biomes": [
+  {
+   "name": "Ocean",
+   "zh": "海洋",
+   "bookPages": [
+    321
+   ],
+   "id": 0
+  },
+  {
+   "name": "Plains",
+   "zh": "平原",
+   "bookPages": [
+    161
+   ],
+   "id": 1
+  },
+  {
+   "name": "Desert",
+   "zh": "沙漠",
+   "bookPages": [
+    208
+   ],
+   "id": 2
+  },
+  {
+   "name": "Extreme Hills",
+   "zh": "峭壁",
+   "bookPages": [
+    103,
+    147
+   ],
+   "id": 3
+  },
+  {
+   "name": "Forest",
+   "zh": "森林",
+   "bookPages": [
+    18
+   ],
+   "id": 4
+  },
+  {
+   "name": "Taiga",
+   "zh": "针叶林",
+   "bookPages": [
+    19
+   ],
+   "id": 5
+  },
+  {
+   "name": "Swampland",
+   "zh": "沼泽",
+   "bookPages": [
+    259
+   ],
+   "id": 6
+  },
+  {
+   "name": "River",
+   "zh": "河流",
+   "bookPages": [
+    296
+   ],
+   "id": 7
+  },
+  {
+   "name": "Hell",
+   "zh": ""
+  },
+  {
+   "name": "Sky",
+   "zh": ""
+  },
+  {
+   "name": "FrozenOcean",
+   "zh": "冻洋",
+   "bookPages": [
+    234,
+    322
+   ],
+   "id": 10
+  },
+  {
+   "name": "FrozenRiver",
+   "zh": "冻河",
+   "bookPages": [
+    235,
+    297
+   ],
+   "id": 11
+  },
+  {
+   "name": "Ice Plains",
+   "zh": "冰原",
+   "bookPages": [
+    236,
+    278
+   ],
+   "id": 12
+  },
+  {
+   "name": "Ice Mountains",
+   "zh": "冰山",
+   "bookPages": [
+    148,
+    237
+   ],
+   "id": 13
+  },
+  {
+   "name": "MushroomIsland",
+   "zh": ""
+  },
+  {
+   "name": "MushroomIslandShore",
+   "zh": "蘑菇岛岸",
+   "bookPages": [
+    2
+   ],
+   "id": 15
+  },
+  {
+   "name": "Beach",
+   "zh": "沙滩",
+   "bookPages": [
+    1
+   ],
+   "id": 16
+  },
+  {
+   "name": "DesertHills",
+   "zh": "沙漠丘陵",
+   "bookPages": [
+    105,
+    209
+   ],
+   "id": 17
+  },
+  {
+   "name": "ForestHills",
+   "zh": "森林丘陵",
+   "bookPages": [
+    21,
+    107
+   ],
+   "id": 18
+  },
+  {
+   "name": "TaigaHills",
+   "zh": "针叶林丘陵",
+   "bookPages": [
+    20,
+    104
+   ],
+   "id": 19
+  },
+  {
+   "name": "Extreme Hills Edge",
+   "zh": "峭壁边缘",
+   "bookPages": [
+    149
+   ],
+   "id": 20
+  },
+  {
+   "name": "Jungle",
+   "zh": ""
+  },
+  {
+   "name": "JungleHills",
+   "zh": "丛林丘陵",
+   "bookPages": [
+    106
+   ],
+   "id": 22
+  },
+  {
+   "name": "JungleEdge",
+   "zh": "丛林边缘",
+   "bookPages": [
+    22
+   ],
+   "id": 23
+  },
+  {
+   "name": "Deep Ocean",
+   "zh": "深海",
+   "bookPages": [
+    323
+   ],
+   "id": 24
+  },
+  {
+   "name": "Stone Beach",
+   "zh": "石滩",
+   "bookPages": [
+    3
+   ],
+   "id": 25
+  },
+  {
+   "name": "Cold Beach",
+   "zh": "冷沙滩",
+   "bookPages": [
+    4,
+    238
+   ],
+   "id": 26
+  },
+  {
+   "name": "Birch Forest",
+   "zh": "白桦森林",
+   "bookPages": [
+    23
+   ],
+   "id": 27
+  },
+  {
+   "name": "Birch Forest Hills",
+   "zh": "白桦森林丘陵",
+   "bookPages": [
+    24,
+    108
+   ],
+   "id": 28
+  },
+  {
+   "name": "Roofed Forest",
+   "zh": "黑森林",
+   "bookPages": [
+    25,
+    346
+   ],
+   "id": 29
+  },
+  {
+   "name": "Cold Taiga",
+   "zh": "冷针叶林",
+   "bookPages": [
+    26,
+    239
+   ],
+   "id": 30
+  },
+  {
+   "name": "Cold Taiga Hills",
+   "zh": "冷针叶林丘陵",
+   "bookPages": [
+    27,
+    109,
+    240
+   ],
+   "id": 31
+  },
+  {
+   "name": "Mega Taiga",
+   "zh": "巨型针叶林",
+   "bookPages": [
+    28
+   ],
+   "id": 32
+  },
+  {
+   "name": "Mega Taiga Hills",
+   "zh": "巨型针叶林丘陵",
+   "bookPages": [
+    29,
+    110
+   ],
+   "id": 33
+  },
+  {
+   "name": "Extreme Hills+",
+   "zh": "峭壁+",
+   "bookPages": [
+    30,
+    150
+   ],
+   "id": 34
+  },
+  {
+   "name": "Savanna",
+   "zh": "热带草原",
+   "bookPages": [
+    162
+   ],
+   "id": 35
+  },
+  {
+   "name": "Savanna Plateau",
+   "zh": "热带草原高原",
+   "bookPages": [
+    163
+   ],
+   "id": 36
+  },
+  {
+   "name": "Mesa",
+   "zh": "平顶山",
+   "bookPages": [
+    143,
+    210
+   ],
+   "id": 37
+  },
+  {
+   "name": "Mesa Plateau F",
+   "zh": "平顶山高原 F",
+   "bookPages": [
+    144,
+    211
+   ],
+   "id": 38
+  },
+  {
+   "name": "Mesa Plateau",
+   "zh": "平顶山高原",
+   "bookPages": [
+    145,
+    212
+   ],
+   "id": 39
+  },
+  {
+   "name": "Alps Forest",
+   "zh": "高山森林",
+   "bookPages": [
+    32,
+    152,
+    242
+   ],
+   "id": 40
+  },
+  {
+   "name": "Alps",
+   "zh": "高山",
+   "bookPages": [
+    151,
+    241
+   ],
+   "id": 41
+  },
+  {
+   "name": "Arctic",
+   "zh": "极地",
+   "bookPages": [
+    243,
+    280
+   ],
+   "id": 42
+  },
+  {
+   "name": "Bamboo Forest",
+   "zh": "竹林",
+   "bookPages": [
+    33
+   ],
+   "id": 43
+  },
+  {
+   "name": "Bayou",
+   "zh": "河湾湿地",
+   "bookPages": [
+    260,
+    299,
+    325
+   ],
+   "id": 44
+  },
+  {
+   "name": "Bog",
+   "zh": "泥炭沼泽",
+   "bookPages": [
+    34,
+    261
+   ],
+   "id": 45
+  },
+  {
+   "name": "Boreal Forest",
+   "zh": "北方森林",
+   "bookPages": [
+    35
+   ],
+   "id": 47
+  },
+  {
+   "name": "Brushland",
+   "zh": "灌丛地",
+   "bookPages": [
+    164
+   ],
+   "id": 48
+  },
+  {
+   "name": "Canyon",
+   "zh": "峡谷",
+   "bookPages": [
+    111,
+    153,
+    215
+   ],
+   "id": 49
+  },
+  {
+   "name": "Canyon Ravine",
+   "zh": "河谷",
+   "bookPages": [
+    112,
+    216
+   ],
+   "id": 50
+  },
+  {
+   "name": "Chaparral",
+   "zh": "硬叶灌丛",
+   "bookPages": [
+    165
+   ],
+   "id": 51
+  },
+  {
+   "name": "Cherry Blossom Grove",
+   "zh": "樱花树林",
+   "bookPages": [
+    36,
+    369
+   ],
+   "id": 52
+  },
+  {
+   "name": "Coniferous Forest",
+   "zh": "针叶森林",
+   "bookPages": [
+    37,
+    113
+   ],
+   "id": 53
+  },
+  {
+   "name": "Coral Reef",
+   "zh": "珊瑚礁",
+   "bookPages": [
+    303,
+    329
+   ],
+   "id": 54
+  },
+  {
+   "name": "Crag",
+   "zh": "岩峰",
+   "bookPages": [
+    154,
+    282,
+    352
+   ],
+   "id": 56
+  },
+  {
+   "name": "Dead Forest",
+   "zh": "枯死森林",
+   "bookPages": [
+    39,
+    353
+   ],
+   "id": 57
+  },
+  {
+   "name": "Dead Swamp",
+   "zh": "枯死沼泽",
+   "bookPages": [
+    262,
+    354
+   ],
+   "id": 58
+  },
+  {
+   "name": "Deciduous Forest",
+   "zh": "落叶森林",
+   "bookPages": [
+    40
+   ],
+   "id": 59
+  },
+  {
+   "name": "Dry River",
+   "zh": "干涸河流",
+   "bookPages": [
+    188,
+    228
+   ],
+   "id": 60
+  },
+  {
+   "name": "Eucalyptus Forest",
+   "zh": "桉树林",
+   "bookPages": [
+    189
+   ],
+   "id": 61
+  },
+  {
+   "name": "Fen",
+   "zh": "草本沼泽",
+   "bookPages": [
+    41,
+    263
+   ],
+   "id": 62
+  },
+  {
+   "name": "Flower Field",
+   "zh": "花田",
+   "bookPages": [
+    166
+   ],
+   "id": 63
+  },
+  {
+   "name": "Frost Forest",
+   "zh": "霜冻森林",
+   "bookPages": [
+    42,
+    245
+   ],
+   "id": 64
+  },
+  {
+   "name": "Fungi Forest",
+   "zh": "菌类森林",
+   "bookPages": [
+    43,
+    264,
+    370
+   ],
+   "id": 65
+  },
+  {
+   "name": "Garden",
+   "zh": "花园",
+   "bookPages": [
+    167,
+    371
+   ],
+   "id": 66
+  },
+  {
+   "name": "Glacier",
+   "zh": "冰川",
+   "bookPages": [
+    115,
+    246
+   ],
+   "id": 67
+  },
+  {
+   "name": "Grassland",
+   "zh": "草地",
+   "bookPages": [
+    116,
+    168,
+    265
+   ],
+   "id": 68
+  },
+  {
+   "name": "Grove",
+   "zh": "小树林",
+   "bookPages": [
+    44,
+    169
+   ],
+   "id": 69
+  },
+  {
+   "name": "Heathland",
+   "zh": "石南荒原",
+   "bookPages": [
+    170
+   ],
+   "id": 70
+  },
+  {
+   "name": "Highland",
+   "zh": "高地",
+   "bookPages": [
+    117,
+    155
+   ],
+   "id": 71
+  },
+  {
+   "name": "Jade Cliffs",
+   "zh": "翡翠悬崖",
+   "bookPages": [
+    45,
+    156
+   ],
+   "id": 72
+  },
+  {
+   "name": "Kelp Forest",
+   "zh": "海带森林",
+   "bookPages": [
+    52,
+    304,
+    330
+   ],
+   "id": 73
+  },
+  {
+   "name": "Land of Lakes",
+   "zh": "湖泊之地",
+   "bookPages": [
+    190
+   ],
+   "id": 74
+  },
+  {
+   "name": "Land of Lakes Marsh",
+   "zh": "湖泊之地沼泽",
+   "bookPages": [
+    276
+   ],
+   "id": 75
+  },
+  {
+   "name": "Lavender Fields",
+   "zh": "薰衣草田",
+   "bookPages": [
+    171
+   ],
+   "id": 76
+  },
+  {
+   "name": "Lush Desert",
+   "zh": "葱郁沙漠",
+   "bookPages": [
+    218
+   ],
+   "id": 77
+  },
+  {
+   "name": "Lush River",
+   "zh": "葱郁河流",
+   "bookPages": [
+    191,
+    320
+   ],
+   "id": 78
+  },
+  {
+   "name": "Lush Swamp",
+   "zh": "葱郁沼泽",
+   "bookPages": [
+    266,
+    300,
+    326
+   ],
+   "id": 79
+  },
+  {
+   "name": "Mangrove",
+   "zh": "红树林",
+   "bookPages": [
+    46,
+    301,
+    327
+   ],
+   "id": 80
+  },
+  {
+   "name": "Maple Woods",
+   "zh": "枫树林",
+   "bookPages": [
+    47
+   ],
+   "id": 81
+  },
+  {
+   "name": "Marsh",
+   "zh": "湿草沼泽",
+   "bookPages": [
+    267,
+    302,
+    328
+   ],
+   "id": 82
+  },
+  {
+   "name": "Meadow Forest",
+   "zh": "草甸森林",
+   "bookPages": [
+    49,
+    173
+   ],
+   "id": 83
+  },
+  {
+   "name": "Meadow",
+   "zh": "草甸",
+   "bookPages": [
+    48,
+    172
+   ],
+   "id": 84
+  },
+  {
+   "name": "Moor",
+   "zh": "荒原",
+   "bookPages": [
+    118,
+    268
+   ],
+   "id": 85
+  },
+  {
+   "name": "Mountain",
+   "zh": "山地",
+   "bookPages": [
+    50,
+    157
+   ],
+   "id": 86
+  },
+  {
+   "name": "Mystic Grove",
+   "zh": "神秘树林",
+   "bookPages": [
+    51,
+    372
+   ],
+   "id": 87
+  },
+  {
+   "name": "Oasis",
+   "zh": "绿洲",
+   "bookPages": [
+    219
+   ],
+   "id": 88
+  },
+  {
+   "name": "Ominous Woods",
+   "zh": "不祥树林",
+   "bookPages": [
+    53,
+    269,
+    355,
+    373
+   ],
+   "id": 89
+  },
+  {
+   "name": "Orchard",
+   "zh": "果园",
+   "bookPages": [
+    54,
+    174
+   ],
+   "id": 90
+  },
+  {
+   "name": "Origin Valley",
+   "zh": "起源山谷",
+   "bookPages": [
+    192
+   ],
+   "id": 91
+  },
+  {
+   "name": "Outback",
+   "zh": "内陆荒野",
+   "bookPages": [
+    175,
+    220
+   ],
+   "id": 92
+  },
+  {
+   "name": "Polar Chasm",
+   "zh": "极地裂谷",
+   "bookPages": [
+    193
+   ],
+   "id": 94
+  },
+  {
+   "name": "Prairie",
+   "zh": "大草原",
+   "bookPages": [
+    176
+   ],
+   "id": 95
+  },
+  {
+   "name": "Quagmire",
+   "zh": "泥沼",
+   "bookPages": [
+    270,
+    283,
+    357
+   ],
+   "id": 96
+  },
+  {
+   "name": "Rainforest",
+   "zh": "雨林",
+   "bookPages": [
+    55,
+    119
+   ],
+   "id": 97
+  },
+  {
+   "name": "Redwood Forest",
+   "zh": "红杉森林",
+   "bookPages": [
+    56
+   ],
+   "id": 98
+  },
+  {
+   "name": "Sacred Springs",
+   "zh": "圣泉",
+   "bookPages": [
+    57,
+    158,
+    374
+   ],
+   "id": 99
+  },
+  {
+   "name": "Scrubland",
+   "zh": "矮灌丛地",
+   "bookPages": [
+    177
+   ],
+   "id": 100
+  },
+  {
+   "name": "Seasonal Forest Clearing",
+   "zh": "季节森林空地",
+   "bookPages": [
+    194
+   ],
+   "id": 101
+  },
+  {
+   "name": "Seasonal Forest",
+   "zh": "季节森林",
+   "bookPages": [
+    58
+   ],
+   "id": 102
+  },
+  {
+   "name": "Shield",
+   "zh": "地盾",
+   "bookPages": [
+    59,
+    305,
+    331
+   ],
+   "id": 103
+  },
+  {
+   "name": "Shrubland",
+   "zh": "灌木地",
+   "bookPages": [
+    178
+   ],
+   "id": 104
+  },
+  {
+   "name": "Silkglades",
+   "zh": "蛛丝林地",
+   "bookPages": [
+    60,
+    271,
+    358
+   ],
+   "id": 105
+  },
+  {
+   "name": "Sludgepit",
+   "zh": "淤泥坑",
+   "bookPages": [
+    61,
+    272,
+    284,
+    359
+   ],
+   "id": 106
+  },
+  {
+   "name": "Snowy Coniferous Forest",
+   "zh": "积雪针叶森林",
+   "bookPages": [
+    38,
+    114,
+    244
+   ],
+   "id": 107
+  },
+  {
+   "name": "Spectral Garden",
+   "zh": "幽灵花园",
+   "bookPages": [
+    195
+   ],
+   "id": 108
+  },
+  {
+   "name": "Spruce Woods",
+   "zh": "云杉树林",
+   "bookPages": [
+    62
+   ],
+   "id": 109
+  },
+  {
+   "name": "Steppe",
+   "zh": "干草原",
+   "bookPages": [
+    179,
+    221
+   ],
+   "id": 110
+  },
+  {
+   "name": "Temperate Rainforest",
+   "zh": "温带雨林",
+   "bookPages": [
+    63,
+    120
+   ],
+   "id": 111
+  },
+  {
+   "name": "Thicket",
+   "zh": "树丛",
+   "bookPages": [
+    64,
+    180
+   ],
+   "id": 112
+  },
+  {
+   "name": "Tropical Rainforest",
+   "zh": ""
+  },
+  {
+   "name": "Tropics",
+   "zh": "热带海岛",
+   "bookPages": [
+    5,
+    306,
+    332
+   ],
+   "id": 114
+  },
+  {
+   "name": "Tundra",
+   "zh": "苔原",
+   "bookPages": [
+    285
+   ],
+   "id": 115
+  },
+  {
+   "name": "Visceral Heap",
+   "zh": "血肉堆",
+   "bookPages": [
+    361
+   ],
+   "id": 117
+  },
+  {
+   "name": "Volcano",
+   "zh": "火山",
+   "bookPages": [
+    159,
+    286
+   ],
+   "id": 118
+  },
+  {
+   "name": "Wasteland",
+   "zh": "废土",
+   "bookPages": [
+    287,
+    362
+   ],
+   "id": 119
+  },
+  {
+   "name": "Wetland",
+   "zh": "湿地",
+   "bookPages": [
+    65,
+    273
+   ],
+   "id": 120
+  },
+  {
+   "name": "Woodland",
+   "zh": "林地",
+   "bookPages": [
+    66
+   ],
+   "id": 121
+  },
+  {
+   "name": "Xeric Shrubland",
+   "zh": "旱生灌木地",
+   "bookPages": [
+    196,
+    229
+   ],
+   "id": 122
+  },
+  {
+   "name": "Dense Forest",
+   "zh": "茂密森林",
+   "bookPages": [
+    197
+   ],
+   "id": 123
+  },
+  {
+   "name": "Ocean Oil Field",
+   "zh": "海洋油田",
+   "bookPages": [
+    298,
+    324
+   ],
+   "id": 126
+  },
+  {
+   "name": "Desert Oil Field",
+   "zh": "沙漠油田",
+   "bookPages": [
+    213
+   ],
+   "id": 127
+  },
+  {
+   "name": "Boneyard",
+   "zh": "坟场",
+   "bookPages": [
+    281,
+    350
+   ],
+   "id": 128
+  },
+  {
+   "name": "Sunflower Plains",
+   "zh": "向日葵平原",
+   "bookPages": [
+    198
+   ],
+   "id": 129
+  },
+  {
+   "name": "Desert M",
+   "zh": "沙漠 M",
+   "bookPages": [
+    199,
+    230
+   ],
+   "id": 130
+  },
+  {
+   "name": "Extreme Hills M",
+   "zh": "峭壁 M",
+   "bookPages": [
+    129
+   ],
+   "id": 131
+  },
+  {
+   "name": "Flower Forest",
+   "zh": "繁花森林",
+   "bookPages": [
+    99,
+    130
+   ],
+   "id": 132
+  },
+  {
+   "name": "Taiga M",
+   "zh": "针叶林 M",
+   "bookPages": [
+    131
+   ],
+   "id": 133
+  },
+  {
+   "name": "Swampland M",
+   "zh": "沼泽 M",
+   "bookPages": [
+    277
+   ],
+   "id": 134
+  },
+  {
+   "name": "Storage Cell",
+   "zh": "存储元件空间",
+   "bookPages": [
+    200
+   ],
+   "id": 135
+  },
+  {
+   "name": "Corrupted Sands",
+   "zh": "腐化沙地",
+   "bookPages": [
+    217,
+    351
+   ],
+   "id": 136
+  },
+  {
+   "name": "Phantasmagoric Inferno",
+   "zh": "幻景炼狱",
+   "bookPages": [
+    356
+   ],
+   "id": 137
+  },
+  {
+   "name": "Undergarden",
+   "zh": "地下花园",
+   "bookPages": [
+    360
+   ],
+   "id": 138
+  },
+  {
+   "name": "Ice Plains Spikes",
+   "zh": "冰刺平原",
+   "bookPages": [
+    132,
+    257
+   ],
+   "id": 140
+  },
+  {
+   "name": "moon",
+   "zh": ""
+  },
+  {
+   "name": "marsFlat",
+   "zh": "火星平原",
+   "bookPages": [
+    214
+   ],
+   "id": 142
+  },
+  {
+   "name": "asteroids",
+   "zh": "小行星带",
+   "bookPages": [
+    349
+   ],
+   "id": 143
+  },
+  {
+   "name": "space (Galacticraft)",
+   "zh": "太空",
+   "bookPages": [
+    201
+   ]
+  },
+  {
+   "name": "Jungle M",
+   "zh": "丛林 M",
+   "bookPages": [
+    133
+   ],
+   "id": 149
+  },
+  {
+   "name": "JungleEdge M",
+   "zh": "丛林边缘 M",
+   "bookPages": [
+    134
+   ],
+   "id": 151
+  },
+  {
+   "name": "Birch Forest M",
+   "zh": "白桦森林 M",
+   "bookPages": [
+    135
+   ],
+   "id": 155
+  },
+  {
+   "name": "Birch Forest Hills M",
+   "zh": "白桦森林丘陵 M",
+   "bookPages": [
+    136
+   ],
+   "id": 156
+  },
+  {
+   "name": "Roofed Forest M",
+   "zh": "黑森林 M",
+   "bookPages": [
+    137
+   ],
+   "id": 157
+  },
+  {
+   "name": "Cold Taiga M",
+   "zh": "冷针叶林M",
+   "bookPages": [
+    138,
+    258
+   ],
+   "id": 158
+  },
+  {
+   "name": "Mega Spruce Taiga",
+   "zh": "巨型云杉针叶林",
+   "bookPages": [
+    100
+   ]
+  },
+  {
+   "name": "Extreme Hills+ M",
+   "zh": "峭壁+ M",
+   "bookPages": [
+    139
+   ],
+   "id": 162
+  },
+  {
+   "name": "Savanna M",
+   "zh": "热带草原 M",
+   "bookPages": [
+    140
+   ],
+   "id": 163
+  },
+  {
+   "name": "Savanna Plateau M",
+   "zh": "热带草原高原 M",
+   "bookPages": [
+    141
+   ],
+   "id": 164
+  },
+  {
+   "name": "Mesa (Bryce)",
+   "zh": "平顶山（布莱斯）",
+   "bookPages": [
+    202,
+    231
+   ],
+   "id": 165
+  },
+  {
+   "name": "Mesa Plateau F M",
+   "zh": "平顶山高原 F M",
+   "bookPages": [
+    101,
+    232
+   ],
+   "id": 166
+  },
+  {
+   "name": "Mesa Plateau M",
+   "zh": "平顶山高原 M",
+   "bookPages": [
+    203,
+    233
+   ],
+   "id": 167
+  },
+  {
+   "name": "Twilight Clearing",
+   "zh": "暮色空地",
+   "bookPages": [
+    187
+   ],
+   "id": 170
+  },
+  {
+   "name": "Dark Forest",
+   "zh": "黑暗森林",
+   "bookPages": [
+    96,
+    363
+   ],
+   "id": 171
+  },
+  {
+   "name": "Dark Forest Center",
+   "zh": "黑暗森林中心",
+   "bookPages": [
+    98,
+    364,
+    376
+   ],
+   "id": 172
+  },
+  {
+   "name": "Dense Mushroom Forest",
+   "zh": "深层蘑菇森林",
+   "bookPages": [
+    95
+   ]
+  },
+  {
+   "name": "Fire Swamp",
+   "zh": "火焰沼泽",
+   "bookPages": [
+    275,
+    293
+   ],
+   "id": 175
+  },
+  {
+   "name": "Twilight Glacier",
+   "zh": "暮色冰川",
+   "bookPages": [
+    256,
+    292
+   ],
+   "id": 176
+  },
+  {
+   "name": "Twilight Highlands",
+   "zh": "暮色高地",
+   "bookPages": [
+    90,
+    160
+   ],
+   "id": 177
+  },
+  {
+   "name": "Highlands Center",
+   "zh": "高地中心",
+   "bookPages": [
+    146,
+    294
+   ],
+   "id": 178
+  },
+  {
+   "name": "Twilight Lake",
+   "zh": "暮色湖泊",
+   "bookPages": [
+    345
+   ],
+   "id": 179
+  },
+  {
+   "name": "Firefly Forest",
+   "zh": "萤火虫森林",
+   "bookPages": [
+    94
+   ],
+   "id": 180
+  },
+  {
+   "name": "Mushroom Forest",
+   "zh": "蘑菇森林",
+   "bookPages": [
+    91
+   ],
+   "id": 181
+  },
+  {
+   "name": "Oak Savanna",
+   "zh": "橡木稀树平原",
+   "bookPages": [
+    93
+   ],
+   "id": 182
+  },
+  {
+   "name": "Twilight Stream",
+   "zh": "暮色溪流",
+   "bookPages": [
+    319
+   ],
+   "id": 184
+  },
+  {
+   "name": "Twilight Swamp",
+   "zh": "暮色沼泽",
+   "bookPages": [
+    274
+   ],
+   "id": 185
+  },
+  {
+   "name": "Thornlands",
+   "zh": "荆棘之地",
+   "bookPages": [
+    128,
+    295
+   ],
+   "id": 186
+  },
+  {
+   "name": "Twilight Forest",
+   "zh": "暮色森林",
+   "bookPages": [
+    88
+   ],
+   "id": 187
+  },
+  {
+   "name": "Dense Twilight Forest",
+   "zh": "茂密暮色森林",
+   "bookPages": [
+    89
+   ],
+   "id": 188
+  },
+  {
+   "name": "Enchanted Forest",
+   "zh": "魔法森林",
+   "bookPages": [
+    97,
+    375
+   ],
+   "id": 189
+  },
+  {
+   "name": "Eerie",
+   "zh": "诡异之地",
+   "bookPages": [
+    347,
+    366
+   ],
+   "id": 190
+  },
+  {
+   "name": "Eldritch",
+   "zh": "邪术之地",
+   "bookPages": [
+    348,
+    367
+   ],
+   "id": 191
+  },
+  {
+   "name": "Magical Forest",
+   "zh": "魔法森林",
+   "bookPages": [
+    31,
+    368
+   ],
+   "id": 192
+  },
+  {
+   "name": "Tainted Land",
+   "zh": "腐化之地",
+   "bookPages": [
+    279,
+    365
+   ],
+   "id": 193
+  },
+  {
+   "name": "Snowy Forest",
+   "zh": "积雪森林",
+   "bookPages": [
+    92,
+    255
+   ],
+   "id": 196
+  },
+  {
+   "name": "Toxic Everglades",
+   "zh": "剧毒大沼泽",
+   "bookPages": [
+    102,
+    142
+   ],
+   "id": 199
+  },
+  {
+   "name": "rwg_riverIce",
+   "zh": "冰河",
+   "bookPages": [
+    247,
+    307
+   ]
+  },
+  {
+   "name": "Space (galaxyspace)",
+   "zh": ""
+  },
+  {
+   "name": "rwg_riverCold",
+   "zh": "寒冷河流",
+   "bookPages": [
+    67,
+    308
+   ]
+  },
+  {
+   "name": "Venus",
+   "zh": ""
+  },
+  {
+   "name": "Pluto",
+   "zh": ""
+  },
+  {
+   "name": "rwg_riverTemperate",
+   "zh": "温带河流",
+   "bookPages": [
+    68,
+    309
+   ]
+  },
+  {
+   "name": "Pluto2",
+   "zh": ""
+  },
+  {
+   "name": "rwg_riverHot",
+   "zh": "炎热河流",
+   "bookPages": [
+    222,
+    310
+   ]
+  },
+  {
+   "name": "Pluto3",
+   "zh": ""
+  },
+  {
+   "name": "rwg_riverWet",
+   "zh": "潮湿河流",
+   "bookPages": [
+    311
+   ]
+  },
+  {
+   "name": "Pluto4",
+   "zh": ""
+  },
+  {
+   "name": "rwg_riverOasis",
+   "zh": "绿洲河流",
+   "bookPages": [
+    312
+   ]
+  },
+  {
+   "name": "Kuiper Belt",
+   "zh": ""
+  },
+  {
+   "name": "rwg_oceanIce",
+   "zh": "冰洋",
+   "bookPages": [
+    6,
+    248,
+    333
+   ]
+  },
+  {
+   "name": "rwg_oceanCold",
+   "zh": "寒冷海洋",
+   "bookPages": [
+    7,
+    69,
+    334
+   ]
+  },
+  {
+   "name": "Io",
+   "zh": ""
+  },
+  {
+   "name": "rwg_oceanTemperate",
+   "zh": "温带海洋",
+   "bookPages": [
+    8,
+    70,
+    335
+   ]
+  },
+  {
+   "name": "IoAsh",
+   "zh": ""
+  },
+  {
+   "name": "rwg_oceanHot",
+   "zh": "炎热海洋",
+   "bookPages": [
+    9,
+    223,
+    336
+   ]
+  },
+  {
+   "name": "Titan",
+   "zh": ""
+  },
+  {
+   "name": "BarnardaCShores",
+   "zh": ""
+  },
+  {
+   "name": "BarnardaCHills",
+   "zh": ""
+  },
+  {
+   "name": "BarnardaCLowPlains",
+   "zh": ""
+  },
+  {
+   "name": "rwg_oceanOasis",
+   "zh": "海洋绿洲",
+   "bookPages": [
+    11,
+    338
+   ]
+  },
+  {
+   "name": "rwg_snowForest",
+   "zh": "降雪森林",
+   "bookPages": [
+    71,
+    250
+   ]
+  },
+  {
+   "name": "rwg_snowDesert",
+   "zh": "降雪沙漠",
+   "bookPages": [
+    249,
+    288
+   ]
+  },
+  {
+   "name": "rwg_coldPlains",
+   "zh": "冰冷平原",
+   "bookPages": [
+    289
+   ]
+  },
+  {
+   "name": "rwg_coldForest",
+   "zh": "寒冷森林",
+   "bookPages": [
+    72,
+    74,
+    121
+   ]
+  },
+  {
+   "name": "rwg_hotPlains",
+   "zh": "炎热平原",
+   "bookPages": [
+    181
+   ]
+  },
+  {
+   "name": "rwg_hotForest",
+   "zh": "炎热森林",
+   "bookPages": [
+    182
+   ]
+  },
+  {
+   "name": "rwg_hotDesert",
+   "zh": "炎热沙漠",
+   "bookPages": [
+    224
+   ]
+  },
+  {
+   "name": "rwg_plains",
+   "zh": "平原（RWG）",
+   "bookPages": [
+    183
+   ]
+  },
+  {
+   "name": "rwg_tropical",
+   "zh": ""
+  },
+  {
+   "name": "rwg_redwood",
+   "zh": "红杉林",
+   "bookPages": [
+    73
+   ]
+  },
+  {
+   "name": "rwg_jungle",
+   "zh": ""
+  },
+  {
+   "name": "rwg_oasis",
+   "zh": "绿洲",
+   "bookPages": [
+    204
+   ]
+  },
+  {
+   "name": "rwg_temperateForest",
+   "zh": "温带森林",
+   "bookPages": [
+    205
+   ]
+  },
+  {
+   "name": "rwg_oceanWet",
+   "zh": "潮湿海洋",
+   "bookPages": [
+    10,
+    337
+   ]
+  },
+  {
+   "name": "BarnardaCFlowers",
+   "zh": ""
+  },
+  {
+   "name": "BarnardaCOceans",
+   "zh": ""
+  },
+  {
+   "name": "Australian Desert II",
+   "zh": ""
+  },
+  {
+   "name": "Australian Desert II",
+   "zh": ""
+  },
+  {
+   "name": "Plainlands",
+   "zh": ""
+  },
+  {
+   "name": "Australian Outback",
+   "zh": ""
+  },
+  {
+   "name": "Australian Ocean",
+   "zh": ""
+  },
+  {
+   "name": "Australian Forest",
+   "zh": ""
+  },
+  {
+   "name": "TCetiE",
+   "zh": ""
+  },
+  {
+   "name": "Ice River",
+   "zh": "冰河（RWG2）",
+   "id": 300,
+   "bookPages": [
+    251,
+    313
+   ]
+  },
+  {
+   "name": "Cold River",
+   "zh": "寒冷河流（RWG2）",
+   "id": 301,
+   "bookPages": [
+    75,
+    314
+   ]
+  },
+  {
+   "name": "Temperate River",
+   "zh": "温带河流（RWG2）",
+   "id": 302,
+   "bookPages": [
+    76,
+    315
+   ]
+  },
+  {
+   "name": "Hot River",
+   "zh": "炎热河流（RWG2）",
+   "id": 303,
+   "bookPages": [
+    225,
+    316
+   ]
+  },
+  {
+   "name": "Wet River",
+   "zh": "潮湿河流（RWG2）",
+   "id": 304,
+   "bookPages": [
+    317
+   ]
+  },
+  {
+   "name": "River Oasis",
+   "zh": "绿洲河流（RWG2）",
+   "id": 305,
+   "bookPages": [
+    318
+   ]
+  },
+  {
+   "name": "Ice Ocean",
+   "zh": "冰洋（RWG2）",
+   "id": 306,
+   "bookPages": [
+    12,
+    252,
+    339
+   ]
+  },
+  {
+   "name": "Cold Ocean",
+   "zh": "寒冷海洋（RWG2）",
+   "id": 307,
+   "bookPages": [
+    13,
+    77,
+    340
+   ]
+  },
+  {
+   "name": "Temperate Ocean",
+   "zh": "温带海洋（RWG2）",
+   "id": 308,
+   "bookPages": [
+    14,
+    78,
+    341
+   ]
+  },
+  {
+   "name": "Hot Ocean",
+   "zh": "炎热海洋（RWG2）",
+   "id": 309,
+   "bookPages": [
+    15,
+    226,
+    342
+   ]
+  },
+  {
+   "name": "Wet Ocean",
+   "zh": "潮湿海洋（RWG2）",
+   "id": 310,
+   "bookPages": [
+    16,
+    343
+   ]
+  },
+  {
+   "name": "Ocean Oasis",
+   "zh": "海洋绿洲（RWG2）",
+   "id": 311,
+   "bookPages": [
+    17,
+    344
+   ]
+  },
+  {
+   "name": "Snow Desert",
+   "zh": "降雪沙漠（RWG2）",
+   "id": 312,
+   "bookPages": [
+    253,
+    290
+   ]
+  },
+  {
+   "name": "Snow Forest",
+   "zh": "降雪森林（RWG2）",
+   "id": 313,
+   "bookPages": [
+    79,
+    254
+   ]
+  },
+  {
+   "name": "Cold Plains",
+   "zh": "冰冷平原（RWG2）",
+   "id": 314,
+   "bookPages": [
+    291
+   ]
+  },
+  {
+   "name": "Cold Forest",
+   "zh": "寒冷森林（RWG2）",
+   "id": 315,
+   "bookPages": [
+    80,
+    87,
+    127
+   ]
+  },
+  {
+   "name": "Hot Plains",
+   "zh": "炎热平原（RWG2）",
+   "id": 316,
+   "bookPages": [
+    184
+   ]
+  },
+  {
+   "name": "Hot Forest",
+   "zh": "炎热森林（RWG2）",
+   "id": 317,
+   "bookPages": [
+    185
+   ]
+  },
+  {
+   "name": "Hot Desert",
+   "zh": "炎热沙漠（RWG2）",
+   "id": 318,
+   "bookPages": [
+    227
+   ]
+  },
+  {
+   "name": "Plains (RWG)",
+   "zh": "平原（RWG）（RWG2）",
+   "id": 319,
+   "bookPages": [
+    186
+   ]
+  },
+  {
+   "name": "Tropical Island",
+   "zh": "热带岛屿（RWG2）",
+   "id": 320
+  },
+  {
+   "name": "Redwood",
+   "zh": "红杉林（RWG2）",
+   "id": 321,
+   "bookPages": [
+    81
+   ]
+  },
+  {
+   "name": "Jungle (RWG)",
+   "zh": "丛林（RWG2）",
+   "id": 322
+  },
+  {
+   "name": "Oasis",
+   "zh": "绿洲（RWG2）",
+   "id": 323,
+   "bookPages": [
+    206
+   ]
+  },
+  {
+   "name": "Temperate Forest",
+   "zh": "温带森林（RWG2）",
+   "id": 324,
+   "bookPages": [
+    207
+   ]
+  },
+  {
+   "name": "Jungle Mesa",
+   "zh": "丛林平顶山（RWG2）",
+   "id": 325,
+   "bookPages": [
+    82,
+    122
+   ]
+  },
+  {
+   "name": "High Rainforest",
+   "zh": "高地雨林（RWG2）",
+   "id": 326,
+   "bookPages": [
+    83,
+    123
+   ]
+  },
+  {
+   "name": "Jungle Hills",
+   "zh": "丛林丘陵（RWG2）",
+   "id": 327,
+   "bookPages": [
+    84,
+    124
+   ]
+  },
+  {
+   "name": "Jungle Canyon",
+   "zh": "丛林峡谷（RWG2）",
+   "id": 328,
+   "bookPages": [
+    85,
+    125
+   ]
+  },
+  {
+   "name": "Redwood Jungle",
+   "zh": "红杉丛林（RWG2）",
+   "id": 329,
+   "bookPages": [
+    86,
+    126
+   ]
+  }
+ ],
+ "types": {
+  "BEACH": "沙滩",
+  "COLD": "寒冷",
+  "CONIFEROUS": "针叶",
+  "DEAD": "枯死的",
+  "DENSE": "茂密",
+  "DRY": "干燥",
+  "END": "末地",
+  "FOREST": "森林",
+  "HILLS": "丘陵",
+  "HOT": "炎热",
+  "JUNGLE": "丛林",
+  "LUSH": "繁茂",
+  "MAGICAL": "魔境",
+  "MESA": "恶地",
+  "MOUNTAIN": "山地",
+  "MUSHROOM": "蘑菇",
+  "NETHER": "下界",
+  "OCEAN": "海洋",
+  "PLAINS": "平原",
+  "RIVER": "河流",
+  "SANDY": "沙地",
+  "SAVANNA": "热带草原",
+  "SNOWY": "雪地",
+  "SPARSE": "稀疏",
+  "SPOOKY": "闹鬼的",
+  "SWAMP": "沼泽",
+  "WASTELAND": "废土",
+  "WET": "潮湿"
+ },
+ "forestryTemperature": {
+  "ICY": "严寒",
+  "COLD": "寒冷",
+  "NORMAL": "一般",
+  "WARM": "温暖",
+  "HOT": "炙热",
+  "HELLISH": "地狱"
+ },
+ "forestryHumidity": {
+  "ARID": "干旱",
+  "NORMAL": "一般",
+  "DAMP": "潮湿"
+ }
+}
