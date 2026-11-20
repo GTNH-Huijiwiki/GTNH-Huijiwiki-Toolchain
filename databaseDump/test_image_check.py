@@ -73,8 +73,6 @@ class StateTest(unittest.TestCase):
         # 本地再次变化后，旧判定不再适用
         update_state(self.db, icons, {}, {'a.png': 'A3', 'b.png': 'B2', 'c.png': 'C2', 'd.png': 'D2'}, {'b.png'})
         self.assertEqual(self.states()['a.png'], '待更新')
-        rows = image_check.state_rows(self.db, icons, {'b.png': 'animated'})
-        self.assertEqual([r[3] for r in rows], ['changed', 'animated', 'changed', 'same'])
 
     def test_exemption_needs_an_online_file(self):
         update_state(self.db, {'new.png'}, {}, {'new.png': 'N1'}, {'new.png'})

@@ -187,7 +187,7 @@ Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数�
    平均 ≤ 1 且最大 ≤ 32 视为相同：不传。不同显卡、驱动下方块边缘的光栅化差异属于这一类。
 4. 其余上传，包括线上没有的图片。
 
-视觉判定按（线上 sha1，本地 sha1）存进状态库的 `visual_checks` 表，下次直接复用，
+视觉判定按（线上 sha1，本地 sha1）存进状态库的 `visual_checks` 表，同一对不再比对；
 下载的线上原图缓存在 `source_state/wiki-originals/`（不提交）。
 
 `config/image_unstable.json` 是渲染不稳定的图标名单：同一整合包、同一导出器连续导出两次，
@@ -200,15 +200,7 @@ python image_check.py stability <第一次的 dumps 目录> <第二次的 dumps 
 `icon-hashes.json` 由 GTNH-Dumper 写出，记录每个 PNG 的像素哈希；导出器已固定渲染时钟，
 多数随时间变化的图标已经稳定，名单只收剩下的。
 
-判定结果也可以放到线上，供其他维护者复用（线上 Lua 不查询，仅供维护）：
-
-```bash
-python image_check.py export   # 写到 wikitext/Data/Versions/<远端模组名>/<版本>/ImageState/，随 data_upload.py 上传
-python image_check.py pull     # 读取线上 ImageState，补齐本地状态库的线上 sha1 与视觉判定
-```
-
-每页数组 `imageStates` 的一行是 `[图标名, 线上 sha1, 本地 sha1, 判定]`，判定为
-`same`（字节相同）、`visual`（视觉相同）、`animated`、`unstable` 或 `changed`（待重传）。
+判定存在 `image_inventory.db` 中，随仓库提交，其他维护者拉取仓库后同样复用，不必重新下载比对。
 
 ### 中文重名图片的人工选择
 

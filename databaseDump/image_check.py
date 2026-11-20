@@ -2,15 +2,14 @@
 
 用法（在 .env 配好数据源后）:
     python image_check.py stability <dumpsA> <dumpsB>   # 比较同一环境两次导出，记录不稳定图片
-    python image_check.py pull                          # 读取线上 ImageState，合并到本地状态库
-    python image_check.py export                        # 把本地判定写成 ImageState 分页，等待 data_upload
 
 判定规则（image_inventory.py 与 image_upload.py 共用）:
 1. 本地文件 sha1 与线上文件 sha1 相同：不传。
 2. 免更新：导出时是动图（itemicon.json 的 frameCount > 1，含静态图与帧条），或在不稳定名单里，
    且线上已有文件：不传。
 3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取通道差最大值，
-   平均值 ≤ 1 且最大值 ≤ 32 视为相同：不传。判定按（线上 sha1，本地 sha1）记录，下次直接复用。
+   平均值 ≤ 1 且最大值 ≤ 32 视为相同：不传。判定按（线上 sha1，本地 sha1）记在 image_inventory.db
+   （随仓库提交，其他维护者同样复用），下次不再下载比对。
 4. 其余上传。
 """
 
@@ -31,7 +30,6 @@ FINGERPRINT_SIZE = 32
 MEAN_LIMIT = 1.0
 MAX_LIMIT = 32
 UNSTABLE_CONFIG = Path(__file__).resolve().parent / 'config' / 'image_unstable.json'
-STATE_ARRAY = 'imageStates'
 # 惠迹 CDN 拒绝非浏览器 UA。
 BROWSER_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
               '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36')
@@ -223,93 +221,13 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
     return stats
 
 
-# ── 线上状态记录（仅供维护，线上 Lua 不查询） ───────────────────
-
-def state_rows(db_path, current_icons, exempt) -> list[list]:
-    """[图标名, 线上 sha1, 本地 sha1, 判定]；判定为 same/visual/animated/unstable/changed。"""
-    with closing(sqlite3.connect(db_path)) as conn:
-        init_tables(conn)
-        rows = conn.execute(
-            "SELECT i.icon_name, i.uploaded_sha1, i.content_sha1, v.same FROM images i "
-            "LEFT JOIN visual_checks v ON v.wiki_sha1=i.uploaded_sha1 AND v.content_sha1=i.content_sha1 "
-            "WHERE i.uploaded_sha1 IS NOT NULL ORDER BY i.icon_name").fetchall()
-    result = []
-    for name, uploaded, content, same in rows:
-        if name not in current_icons:
-            continue
-        if uploaded == content:
-            verdict = 'same'
-        elif same == 1:
-            verdict = 'visual'
-        elif name in exempt:
-            verdict = exempt[name]
-        else:
-            verdict = 'changed'
-        result.append([name, uploaded, content, verdict])
-    return result
-
-
-def export_state(db_path, current_icons, exempt, output_dir) -> int:
-    from bounded_json import write_array_pages
-    rows = state_rows(db_path, current_icons, exempt)
-    output = Path(output_dir)
-    for old in output.glob('*.json') if output.is_dir() else []:
-        if old.stem.isdecimal():
-            old.unlink()
-    write_array_pages(rows, {'columns': ['icon', 'wikiSha1', 'localSha1', 'verdict']}, STATE_ARRAY, output)
-    return len(rows)
-
-
-def pull_state(db_path, remote_prefix) -> int:
-    """读取线上 ImageState 分页：补本地缺失的线上 sha1，并导入视觉相同的判定。"""
-    from image_state import set_uploaded
-    pages = []
-    cont = {}
-    while True:
-        data = _api(dict(action='query', list='allpages', apnamespace=3500,
-                         apprefix=remote_prefix + 'ImageState/', aplimit=500, **cont))
-        pages += [p['title'] for p in data['query']['allpages']]
-        if 'continue' not in data:
-            break
-        cont = data['continue']
-    imported = 0
-    with closing(sqlite3.connect(db_path)) as conn, conn:
-        init_tables(conn)
-        for title in pages:
-            data = _api(dict(action='query', prop='revisions', rvprop='content', rvslots='main', titles=title))
-            content = data['query']['pages'][0]['revisions'][0]['slots']['main']['content']
-            for name, uploaded, local, verdict in json.loads(content)[STATE_ARRAY]:
-                row = conn.execute('SELECT uploaded_sha1 FROM images WHERE icon_name=?', (name,)).fetchone()
-                if row is not None and row[0] is None:
-                    set_uploaded(conn, name, uploaded)
-                if verdict == 'visual':
-                    conn.execute('INSERT OR IGNORE INTO visual_checks VALUES (?, ?, 1)', (uploaded, local))
-                imported += 1
-    return imported
-
-
 def main(argv):
-    from image_version import image_paths
-    from image_plan import prepare_plan
-    from data_version import version_tag
-    command = argv[0] if argv else ''
-    if command == 'stability' and len(argv) == 3:
+    if len(argv) == 3 and argv[0] == 'stability':
         print(record_stability(argv[1], argv[2]))
-        return
-    source, db, _, resolved = image_paths(os.path.dirname(os.path.abspath(__file__)))
-    if command == 'pull':
-        print(f"Imported {pull_state(db, 'Versions/' + version_tag(required=True) + '/'):,} online image states")
-    elif command == 'export':
-        plan = prepare_plan(source, resolved)
-        root = Path(__file__).resolve().parent.parent
-        output = root / 'wikitext' / 'Data' / 'Versions' / Path(version_tag(required=True)) / 'ImageState'
-        count = export_state(db, set(plan['uploadIcons']), exempt_icons(source), output)
-        print(f'Wrote {count:,} image states to {output}')
     else:
         print(__doc__)
         sys.exit(2)
 
 
 if __name__ == '__main__':
-    from image_inventory import _load_dotenv  # noqa: F401 - 导入时加载 .env
     main(sys.argv[1:])
