@@ -9,6 +9,7 @@ data_upload.py
     python data_upload.py --debug           # 前 20 个文件
     python data_upload.py -t 16             # 16 线程
     python data_upload.py --no-delete       # 只上传，不执行删除
+    python data_upload.py --only Thaumonomicon gtnhdimension   # 只处理版本目录下这些第一级目录
 
 上传全部成功后，再删除 wiki_inventory.py 列出的 pending_delete 页面。
 """
@@ -281,9 +282,34 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
 
 # ── Main ─────────────────────────────────────────────────────
 
+def only_directories(args) -> frozenset:
+    """--only 后面直到下一个 - 开头参数的目录名（版本目录下第一级，如 Recipes、gtnhdimension）。"""
+    if "--only" not in args:
+        return frozenset()
+    names = []
+    for arg in args[args.index("--only") + 1:]:
+        if arg.startswith("-"):
+            break
+        names.append(arg)
+    if not names:
+        raise ValueError("--only 需要至少一个目录名，如 --only Thaumonomicon")
+    return frozenset(names)
+
+
+def selected(title: str, only: frozenset) -> bool:
+    """当前版本的数据页；指定 --only 时还须位于所选目录（标题中下划线与空格等同）。"""
+    if not in_scope(title, WIKI_PREFIX):
+        return False
+    if not only:
+        return True
+    rest = title.replace(" ", "_")[len(WIKI_PREFIX.replace(" ", "_")):]
+    return rest.split("/", 1)[0] in {name.replace(" ", "_") for name in only}
+
+
 def main(argv=None):
     require_scope(WIKI_PREFIX)
     args = sys.argv[1:] if argv is None else argv
+    only = only_directories(args)
     debug = "--debug" in args
     threads = 8
     failures = 0
@@ -305,7 +331,9 @@ def main(argv=None):
 
     # ── Upload ──
     pending = get_pending_uploads()
-    upload_tasks = [(path, title) for path, title in pending if in_scope(title, WIKI_PREFIX)]
+    upload_tasks = [(path, title) for path, title in pending if selected(title, only)]
+    if only:
+        print(f"Only: {', '.join(sorted(only))}")
     config_tasks = [(path, title) for path, title in pending if not in_scope(title, WIKI_PREFIX)]
     if upload_tasks:
         if debug:
@@ -363,11 +391,11 @@ def main(argv=None):
     # ── Delete ──
     # 删除在新数据全部上传成功之后进行：上传有失败、中断或调试时不删，旧页面保留到下次。
     # 删除清单由 wiki_inventory.py 生成：保留目录与本地整个缺失的目录不会进入清单。
-    delete_titles = get_pending_deletes()
+    delete_titles = [title for title in get_pending_deletes() if selected(title, only)]
     if "--no-delete" in args:
         print(f"Skipped {len(delete_titles):,} pending deletes (--no-delete).")
     elif delete_titles and (failures or _stop.is_set()
-                            or any(in_scope(title, WIKI_PREFIX) for _, title in get_pending_uploads())):
+                            or any(selected(title, only) for _, title in get_pending_uploads())):
         print(f"{len(delete_titles):,} deletes postponed: finish all uploads first.")
     elif delete_titles:
         if debug:
