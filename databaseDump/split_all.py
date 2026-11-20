@@ -1737,7 +1737,9 @@ def do_biomes(debug: bool):
         print(f"  跳过缺失或空的群系输入: {path}")
         return
     data = json.loads(path.read_text(encoding="utf-8"))
-    biomes = data["biomes"]
+    # 同一群系对象可能占群系数组的多个槽位（如 ID 160），按 ID 只保留第一条，旧版 Dumper 的导出也适用。
+    seen_ids = set()
+    biomes = [biome for biome in data["biomes"] if not (biome["id"] in seen_ids or seen_ids.add(biome["id"]))]
     names = json.loads(BIOME_NAMES_CONFIG.read_text(encoding="utf-8"))
     missing = localize_biomes(biomes, names)
     root = Path(VERSION) / "Biomes"
