@@ -157,9 +157,12 @@ class StabilityTest(unittest.TestCase):
             config = root / 'image_unstable.json'
             config.write_text(json.dumps({'icons': ['old.png']}))
             with patch('image_check.UNSTABLE_CONFIG', config):
-                result = image_check.record_stability(root / 'a', root / 'b')
+                result = image_check.record_stability([root / 'a', root / 'b'])
                 self.assertEqual(result['added'], 1)
                 self.assertEqual(image_check.unstable_icons(), {'old.png', 'y.png'})
+                # 修好导出器后用新结果重建名单
+                image_check.record_stability([root / 'a', root / 'a'], replace=True)
+                self.assertEqual(image_check.unstable_icons(), set())
 
 
 if __name__ == '__main__':

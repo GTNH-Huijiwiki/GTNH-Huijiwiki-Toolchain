@@ -228,8 +228,9 @@ Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数�
 `image_upload.py` 上传前会再核对一次，所以未变化的图片不会反复上传。加 `--offline` 可跳过线上查询。
 
 1. 本地与线上文件 sha1 相同：不传。
-2. 免更新：导出时是动图（`itemicon.json` 中 `frameCount > 1`，静态图和帧条都算），
-   或列在 `config/image_unstable.json` 中，且线上已有文件：不传。
+2. 黑名单 `config/image_unstable.json`（多次导出仍有波动的图标）：`image_upload.py` 默认拒绝上传，
+   线上没有的也不传，并列出这些缺失的图；加 `--force-unstable` 才上传。
+   免更新：导出时是动图（`itemicon.json` 中 `frameCount > 1`，静态图和帧条都算），且线上已有文件：不传。
 3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取 RGBA 通道差的最大值，
    平均 ≤ 1 且最大 ≤ 32 视为相同：不传。不同显卡、驱动下方块边缘的光栅化差异属于这一类。
 4. 其余上传，包括线上没有的图片。
@@ -237,11 +238,12 @@ Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数�
 视觉判定按（线上 sha1，本地 sha1）存进状态库的 `visual_checks` 表，同一对不再比对；
 下载的线上原图缓存在 `source_state/wiki-originals/`（不提交）。
 
-`config/image_unstable.json` 是渲染不稳定的图标名单：同一整合包、同一导出器连续导出两次，
-像素仍然不同的图标（附魔光效、生物模型、随时间变色等）。用两次导出的 `icon-hashes.json` 生成，只增不减：
+`config/image_unstable.json` 是图片黑名单：同一整合包、同一导出器多次导出，像素仍然不同的图标
+（Dumper 已固定渲染时钟、动画贴图、模组动画计数器和实体随机数，名单只收剩下的）。用多次导出的 `icon-hashes.json` 生成：
 
 ```bash
-python image_check.py stability <第一次的 dumps 目录> <第二次的 dumps 目录>
+python image_check.py stability <第一次的 dumps> <第二次的 dumps> [更多...]   # 并入现有名单
+python image_check.py stability <dumpsA> <dumpsB> --replace                 # 导出器修好一批后，用本次结果重建名单
 ```
 
 `icon-hashes.json` 由 GTNH-Dumper 写出，记录每个 PNG 的像素哈希；导出器已固定渲染时钟，

@@ -7,6 +7,7 @@ image_upload.py
     python image_upload.py                   # 全部（8 线程）
     python image_upload.py --debug           # 前 20 张
     python image_upload.py -t 16             # 16 线程
+    python image_upload.py --force-unstable  # 连同黑名单（config/image_unstable.json）里的图标一起上传
 """
 
 import os
@@ -24,7 +25,7 @@ import http.cookiejar
 from image_version import image_paths, require_source
 from image_plan import prepare_plan
 from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy, HASH_CACHE
-from image_check import check_pending, exempt_icons
+from image_check import check_pending, exempt_icons, unstable_icons
 from pathlib import Path
 from item_names import canonical_file
 import hashlib
@@ -261,6 +262,17 @@ def main():
 
     plan = prepare_plan(DUMPS_DIR, NEW_CSV)
     tasks = get_pending_icons(plan)
+    # 黑名单里的图标多次导出仍有波动，默认拒绝上传（线上没有的也不传），--force-unstable 才上传。
+    blocked = sorted(set(tasks) & unstable_icons())
+    if blocked and "--force-unstable" not in args:
+        tasks = [t for t in tasks if t not in set(blocked)]
+        with closing(sqlite3.connect(INVENTORY_DB)) as conn:
+            missing = [n for n in blocked if conn.execute(
+                "SELECT uploaded_sha1 FROM images WHERE icon_name=?", (n,)).fetchone()[0] is None]
+        print(f"Refused {len(blocked):,} blacklisted icons (config/image_unstable.json); "
+              f"{len(missing):,} of them are not on the wiki yet. Use --force-unstable to upload them.")
+        for name in missing[:20]:
+            print(f"  not on wiki: {name}")
     if not tasks:
         print("No pending icons. Run image_inventory.py first.")
         return

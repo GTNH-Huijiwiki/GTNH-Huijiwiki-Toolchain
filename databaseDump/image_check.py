@@ -1,12 +1,14 @@
 """图片是否需要重传的判定：视觉规则、免更新名单和线上状态记录。
 
 用法（在 .env 配好数据源后）:
-    python image_check.py stability <dumpsA> <dumpsB>   # 比较同一环境两次导出，记录不稳定图片
+    python image_check.py stability <dumpsA> <dumpsB> [...] [--replace]
+        # 比较同一环境的多次导出，像素有差异的写入黑名单；--replace 用本次结果重建名单
 
 判定规则（image_inventory.py 与 image_upload.py 共用）:
 1. 本地文件 sha1 与线上文件 sha1 相同：不传。
-2. 免更新：导出时是动图（itemicon.json 的 frameCount > 1，含静态图与帧条），或在不稳定名单里，
-   且线上已有文件：不传。
+2. 黑名单（config/image_unstable.json，多次导出仍有波动）：默认不传，线上没有也不传；
+   image_upload.py 加 --force-unstable 才上传。
+   免更新：导出时是动图（itemicon.json 的 frameCount > 1，含静态图与帧条），且线上已有文件：不传。
 3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取通道差最大值，
    平均值 ≤ 1 且最大值 ≤ 32 视为相同：不传。判定按（线上 sha1，本地 sha1）记在 image_inventory.db
    （随仓库提交，其他维护者同样复用），下次不再下载比对。
@@ -101,18 +103,26 @@ def pixel_manifest(source) -> dict[str, str]:
     return json.loads(path.read_text('utf-8'))['images']
 
 
-def record_stability(source_a, source_b) -> dict:
-    """同一环境的两次导出中像素不同的图片，并入不稳定名单（只增不减）。"""
-    a, b = pixel_manifest(source_a), pixel_manifest(source_b)
-    changed = {name for name in a.keys() & b.keys() if a[name] != b[name]}
-    known = unstable_icons()
+def record_stability(sources, replace=False) -> dict:
+    """同一环境多次导出中像素有差异的图片写入黑名单（config/image_unstable.json）。
+
+    传入两个或更多 dumps 目录，任意两次之间像素不同即列入。默认并入现有名单；
+    replace=True 时只用本次比较的结果重建名单（例如导出器修好一批波动后）。
+    """
+    if len(sources) < 2:
+        raise ValueError('至少需要两次导出')
+    manifests = [pixel_manifest(source) for source in sources]
+    common = set.intersection(*(set(m) for m in manifests))
+    changed = {name for name in common if len({m[name] for m in manifests}) > 1}
+    known = set() if replace else unstable_icons()
     merged = sorted(known | changed)
     UNSTABLE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     UNSTABLE_CONFIG.write_text(json.dumps({
-        'description': '同一整合包、同一导出器连续两次导出像素仍不同的图标（渲染依赖时间或随机数）。'
-                       '这些图标线上已有文件时不再更新。由 image_check.py stability 生成，只增不减。',
-        'icons': merged}, ensure_ascii=False, indent=1) + '\n', 'utf-8')
-    return {'compared': len(a.keys() & b.keys()), 'changed': len(changed),
+        'description': '图片黑名单：同一整合包、同一导出器多次导出像素仍不同的图标（渲染依赖时间或随机数）。'
+                       'image_upload.py 默认拒绝上传这些图标，加 --force-unstable 才上传。'
+                       '由 image_check.py stability 生成。',
+        'icons': merged}, ensure_ascii=False, indent=1) + chr(10), 'utf-8')
+    return {'runs': len(sources), 'compared': len(common), 'changed': len(changed),
             'added': len(changed - known), 'total': len(merged)}
 
 
@@ -248,8 +258,10 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
 
 
 def main(argv):
-    if len(argv) == 3 and argv[0] == 'stability':
-        print(record_stability(argv[1], argv[2]))
+    replace = '--replace' in argv
+    args = [a for a in argv if a != '--replace']
+    if len(args) >= 3 and args[0] == 'stability':
+        print(record_stability(args[1:], replace))
     else:
         print(__doc__)
         sys.exit(2)
