@@ -46,7 +46,7 @@ def registry_and_damage(raw):
     return raw, 0
 
 
-def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=None, policy=None):
+def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=None, policy=None, pixel_hashes=None):
     """items 使用原始 advitempanel 记录，key 为无 NBT 哈希的真实身份。"""
     from item_names import canonical_file, is_quest_placeholder
 
@@ -108,7 +108,8 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
                     continue
                 by_hash = defaultdict(list)
                 names = sorted(variants, key=variants.get)
-                hashes = pool.map(pixel_hash, (icons_dir / icon for icon in names))
+                # Dumper 的像素哈希清单免去解码；清单缺项时才读图（两种哈希不会相等，只会少合并、不会误合并）。
+                hashes = pool.map(lambda icon: (pixel_hashes or {}).get(icon) or pixel_hash(icons_dir / icon), names)
                 for icon, digest in zip(names, hashes):
                     by_hash[digest].append(icon)
                     hashed += 1
@@ -184,11 +185,18 @@ def prepare_plan(source, resolved_csv):
                         conn.execute('SELECT redirect_from, icon_name FROM redirects')
                         if title in filenames and filenames[title] != target}
                     print(f"Reused {len(cached['keyAliases']):,} key redirects from local image state")
+    manifest = Path(report['sourceIconsPath']).with_name('icon-hashes.json')
+    pixel_hashes = None
+    if manifest.is_file():
+        # 有 Dumper 像素哈希时按当前导出重建分组，旧缓存可能指向已改名的文件。
+        pixel_hashes = {name: 'dumper:' + digest
+                        for name, digest in json.loads(manifest.read_text('utf-8'))['images'].items()}
+        cached = None
     plan = build_plan(
         json.loads((source / 'advitempanel.json').read_text('utf-8'))['shortKey'],
         json.loads(Path(report['sourceIconsPath']).read_text('utf-8'))['shortKey'],
         source / 'icons', redirects, cached_plan=cached,
-        policy=load_policy(source, Path(report['sourceIconsPath']).parent))
+        policy=load_policy(source, Path(report['sourceIconsPath']).parent), pixel_hashes=pixel_hashes)
     plan_path.write_text(
         json.dumps(plan, ensure_ascii=False, indent=2), 'utf-8')
     print(f"Image plan: {plan['physicalCount']:,} files; "

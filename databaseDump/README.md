@@ -65,11 +65,25 @@ MOD_VERSION=1.0.0
 修改配置后应重新运行拆分和清单脚本。缺少配置时，按报错提示补齐 `.env` 后重试。
 普通 Wiki 页面源码上传仍使用文件对应的页面路径。
 
+数据页（默认所说的“上传”只指这一部分）。`wiki_inventory.py` 对照线上生成清单：本地有的上传，
+线上有而本地没有的删除；`data_upload.py` 在全部上传成功后才执行删除（`--no-delete` 只上传）。
+线上标题用 allpages 按前缀列举，比较时下划线与空格视为同一字符。以下情况不删除，记为 `kept_online`：
+
+- 保留目录 `KEEP_ONLINE_DIRS`：目前只有 `gtnhdimension/`（线上维度数据含 Dumper 尚未导出的字段，暂作特例）。
+- 本地整个目录都不存在（例如某个拆分任务因缺输入而跳过）。确实要移除整个目录时用
+  `python wiki_inventory.py --delete-dir <目录名>` 点名。
+
+
 ```bash
 python split_all.py
 python wiki_inventory.py
-python image_inventory.py
 python data_upload.py
+```
+
+图片（只在明确要求上传图片时运行；“全量上传”也要先确认是否包含图片）：
+
+```bash
+python image_inventory.py
 python image_upload.py
 python image_redirect.py
 ```
@@ -91,7 +105,7 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 
 `python split_all.py thaumonomicon` 读取 GTNH-Dumper 的 `tc4thaumonomicon.json`，写到
 `Data:Versions/<远端模组名>/<版本>/Thaumonomicon/` 下三个子目录，每个都是数字分页
-（`0.json`、`1.json`…），页内是一个顶层数组，线上 Lua 可像 `Tc4research` 一样用 `$unwind` 查询：
+（`0.json`、`1.json`…），页内是一个顶层数组，线上 Lua 用 `$unwind` 查询：
 
 | 子目录 | 页内数组 | 内容 |
 |---|---|---|
@@ -100,10 +114,29 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 | `Researches/` | `tc4ThaumonomiconResearches` | 研究：坐标、依赖、要素消耗、图标、全部页面 |
 
 记录保持导出器的原字段，按分类、列、行排序。每页严格不超过 2,000,000 字节。
-研究的范围划分与 `Tc4research` 相同：`GTNH` 排除 `addon-mods.json` 中的附属，附属按 `sourceMod` 选择；
-分类只保留仍有研究的。物品与研究的关联由线上 Lua 根据配方数据完成，本工具不做。
-默认任务会包含它，也可单独运行；输入文件缺失或为空时跳过。`Tc4research` 保持不变。
-研究的 `Category` 是本地化分类名（与 `Tc4research` 相同），`CategoryKey` 是分类 key，对应分类记录的 `Key`。
+物品与研究的关联由线上 Lua 根据配方数据完成，本工具不做。
+默认任务会包含它，也可单独运行；输入文件缺失或为空时跳过。
+研究的 `Category` 是本地化分类名，`CategoryKey` 是分类 key，对应分类记录的 `Key`。
+
+它取代了旧的 `Tc4research` 研究表：Dumper 的 `tc4thaumonomicon.json` 包含 `tc4research.json` 的全部字段，
+工具链不再读取 `tc4research.json`，也不再生成 `Tc4research/` 数据页。
+
+### 范围划分
+
+每次运行处理 `.env` 中选择的一个模组与版本。`MOD_LOCAL_NAME=GTNH` 时读取完整导出，
+按研究的 `sourceMod` 排除 [config/addon-mods.json](config/addon-mods.json) 列出的额外附属；
+Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧记录保留。
+公共列表填写注册 Mod ID，目前包含 `TwistSpaceTechnology`、`sciencenotleisure` 和
+`programmablehatches`，目前只用于魔导手册的范围划分。
+
+处理附属时，`MOD_LOCAL_NAME` 填注册 Mod ID，`MOD_REMOTE_NAME`、`MOD_VERSION` 指定目标目录。
+附属优先读取自身 filtered 目录里的 `tc4thaumonomicon.json`；缺少独立导出时，从完整导出按
+`sourceMod` 精确选择注册者，比较时忽略大小写。该字段由 Dumper 在研究注册时记录，研究可以位于任意分类。
+分类只保留仍有研究的，附属不会带上基础包的分类；要素没有归属，只写入 GTNH。
+尚无该附属的 filtered 目录时，使用 `python split_all.py thaumonomicon` 单独处理；
+默认全部任务及其他任务需要附属自己的数据目录。
+完整导出尚无来源字段时跳过附属提取，已有独立 filtered 导出继续使用。
+新增额外附属时，将注册 ID 加入公共列表，再分别处理 GTNH 和该附属的目标版本。
 
 **贴图**不由本工具处理，已由维基一次性上传，Dumper 导出的 `tc4thaumonomicon-assets/` 不进工具链。
 数据里的贴图用 `域名:路径` 标识（如 `thaumcraft:textures/gui/gui_researchback.png`，
@@ -115,26 +148,40 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 例如 `thaumcraft:textures/items/alumentum.png` 对应 `Thaumonomicon-Asset-thaumcraft-items-alumentum.png`。
 研究图标若是物品（`Icon` 字段），用物品图标，不在此列。
 
-## 神秘时代研究表
+## 任务书（Quests）
 
-默认拆分任务包含研究表，也可单独运行 `python split_all.py tc4research`。
-它将当前数据源的 `tc4research.json` 写为
-`Data:Versions/<远端模组名>/<版本>/Tc4research/0.json` 等数字分页，
-保留 `tc4Researches` 数组及研究原字段。每页按最终 UTF-8 字节分页，严格限制在 2,000,000 字节以内。
+`python split_all.py quests` 把任务书拆成两个目录，默认任务包含它：
 
-每次运行处理 `.env` 中选择的一个模组与版本。`MOD_LOCAL_NAME=GTNH` 时读取完整研究表，
-排除 [config/addon-mods.json](config/addon-mods.json) 列出的额外附属来源；
-Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧记录保留。
-公共列表填写注册 Mod ID，目前包含 `TwistSpaceTechnology`、`sciencenotleisure` 和
-`programmablehatches`，供数据范围划分复用，目前用于研究表。
+```text
+wikitext/Data/Versions/<远端模组名>/<版本>/
+  QuestLines/0.json, 1.json, ...
+  Quests/0.json, 1.json, ...
+```
 
-处理附属时，`MOD_LOCAL_NAME` 填注册 Mod ID，`MOD_REMOTE_NAME`、`MOD_VERSION` 指定目标目录。
-附属优先读取自身 filtered 目录里的研究表；缺少独立导出时，从完整研究表按
-`sourceMod` 精确选择注册者，比较时忽略大小写。该字段由 Dumper 在研究注册时记录，研究可以位于任意分类。
-尚无该附属的 filtered 目录时，使用 `python split_all.py tc4research` 单独处理研究；
-默认全部任务及其他任务需要附属自己的数据目录。
-完整旧导出尚无来源字段时跳过附属提取，已有独立 filtered 研究表继续使用。
-新增额外附属时，将注册 ID 加入公共列表，再分别处理 GTNH 和该附属的目标版本。
+输入来自 GTNH-Dumper 复制到 `dumps/betterquesting/` 的源文件（与其他数据同一次导出）：
+`DefaultQuests/`（任务、任务线、`QuestLinesOrder.txt`）和 `lang/zh_CN.lang`。只有 `MOD_LOCAL_NAME=GTNH` 处理，
+输入缺失时跳过。实现在 `quests.py`，随 `wiki_inventory.py` 与 `data_upload.py` 一起上传；
+原来单独的 `questUpload/` 工具已并入。每页最多 1,800,000 字节，两空格缩进。
+
+### 数据结构
+
+任务线页面根字段为 `questLines` 数组，任务页面为 `quests` 数组。记录保留源字段，按以下规则整理：
+
+- NBT 字段的 `:数字` 类型后缀移除，`:9` 列表按数字索引排序并转换为 JSON 数组。
+- 所有 `…IDHigh:4` / `…IDLow:4` 对合并为 `…ID` 字符串：两个有符号 long
+  以大端排列，URL-safe Base64 编码并去掉 `=`。任务 ID、任务线 ID、前置引用和布局引用使用相同格式，
+  不会经过浮点数；其他 NBT long 也保存为十进制字符串，避免 Wiki/JavaScript 丢失精度。
+- `properties.betterquesting.originalName` / `originalDesc` 保留源文件中的英文，
+  `name` / `desc` 分别通过
+  `betterquesting.quest.<ID>.name/desc` 或 `betterquesting.questline.<ID>.name/desc` 汉化。
+  汉化字段中的 `%n` 转为真正换行；保留 `§` 格式码及 `[url]`、`[note]` 等任务书标签供展示端处理。
+- 任务保留 `preRequisites`、`tasks`、`rewards` 和全部属性，物品及其 NBT 不裁剪。
+- 任务线增加 `quests` 数组，包含 `questID`、`x`、`y`、`sizeX`、`sizeY` 等原布局字段；
+  增加从 0 开始的 `order`，按 `QuestLinesOrder.txt` 顺序输出。
+- 同一个任务可出现在多条任务线中，任务正文只输出一次。
+
+缺少汉化时保留原文并打印缺失键。
+源任务书中指向缺失任务的引用会保留并警告。重复 ID、无效 JSON、任务线顺序不一致等错误会阻止写入。
 
 ## 配方输入与输出归类
 
@@ -158,8 +205,10 @@ NEI 的附加槽位。已确认的燃料、灌注台试剂和作物基因提取�
 GTNH 保留已有数据库和上传记录。图片任务只选择当前来源中存在的文件，重定向任务只选择当前 CSV
 计划中仍有效且目标图片已上传的记录。失败的图片保持待更新状态，重复运行可以重试。
 
-三个图片脚本都会在执行前通过 `image_plan.py` 重新计算当前 PNG 的哈希，需要安装 Pillow：
-`python -m pip install Pillow`。运行 `image_inventory.py` 生成本地计划和状态，随后由上传脚本执行。
+三个图片脚本都会在执行前通过 `image_plan.py` 生成去重计划，需要安装 Pillow：
+`python -m pip install Pillow`。数据源带有 GTNH-Dumper 的 `icon-hashes.json` 时，直接用其中的像素哈希按当前导出重建分组，
+不解码图片；没有清单时沿用已保存的计划。文件 sha1 按（文件名、大小、修改时间）缓存在
+`source_state/file-sha1-cache.json`，重跑时未变化的文件不再读取。运行 `image_inventory.py` 生成本地计划和状态，随后由上传脚本执行。
 计划保存在同一状态目录的 `image-upload-plan.json`，包含实体上传列表、最终重定向和各组哈希。
 
 只在同一注册物品 `modid:name` 内比较不同 damage/NBT 变体。哈希覆盖尺寸与完整 RGBA
@@ -172,6 +221,35 @@ GTNH 保留已有数据库和上传记录。图片任务只选择当前来源中
 物品 key、NBT、配方数据、本地 PNG 和已上传文件历史均保留。额外素材沿用原有上传方式。
 
 Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数据源及本地清单。
+
+### 重传判定（image_check.py）
+
+`image_inventory.py` 记下每张图的本地文件 sha1 后，对“待更新”的图标查询线上同名文件，按下列规则决定是否重传。
+`image_upload.py` 上传前会再核对一次，所以未变化的图片不会反复上传。加 `--offline` 可跳过线上查询。
+
+1. 本地与线上文件 sha1 相同：不传。
+2. 黑名单 `config/image_unstable.json`（多次导出仍有波动的图标）：`image_upload.py` 默认拒绝上传，
+   线上没有的也不传，并列出这些缺失的图；加 `--force-unstable` 才上传。
+   免更新：导出时是动图（`itemicon.json` 中 `frameCount > 1`，静态图和帧条都算），且线上已有文件：不传。
+3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取 RGBA 通道差的最大值，
+   平均 ≤ 1 且最大 ≤ 32 视为相同：不传。不同显卡、驱动下方块边缘的光栅化差异属于这一类。
+4. 其余上传，包括线上没有的图片。
+
+视觉判定按（线上 sha1，本地 sha1）存进状态库的 `visual_checks` 表，同一对不再比对；
+下载的线上原图缓存在 `source_state/wiki-originals/`（不提交）。
+
+`config/image_unstable.json` 是图片黑名单：同一整合包、同一导出器多次导出，像素仍然不同的图标
+（Dumper 已固定渲染时钟、动画贴图、模组动画计数器和实体随机数，名单只收剩下的）。用多次导出的 `icon-hashes.json` 生成：
+
+```bash
+python image_check.py stability <第一次的 dumps> <第二次的 dumps> [更多...]   # 并入现有名单
+python image_check.py stability <dumpsA> <dumpsB> --replace                 # 导出器修好一批后，用本次结果重建名单
+```
+
+`icon-hashes.json` 由 GTNH-Dumper 写出，记录每个 PNG 的像素哈希；导出器已固定渲染时钟，
+多数随时间变化的图标已经稳定，名单只收剩下的。
+
+判定存在 `image_inventory.db` 中，随仓库提交，其他维护者拉取仓库后同样复用，不必重新下载比对。
 
 ### 中文重名图片的人工选择
 
@@ -299,7 +377,9 @@ Lua 查询一次读取命中名称桶的所有分页，使用 `$objectToArray` �
 
 `split_all.py items` 生成 `Items/<桶号>/<分块号>.json`。它以最终 `key` 分桶，
 保存每个物品的完整记录，包括名称、说明、图片映射、NBT 和原 `index`。
-原 `Items/` 根目录数字顺序分页在生成成功后清理，只保留一份物品数据。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
+原 `Items/` 根目录数字顺序分页在生成成功后清理，只保留一份物品数据。
+属于矿辞的物品带 `oredict` 列表（如 `"oredict": ["ingotSteel", "ingotAnySteel"]`，顺序同导出）：由 `oreDictionary.json`
+反向写回，成员解析与 `OreDictionary/` 页相同（`:32767` 通配展开为已导出的子类型），两边一致；不属于任何矿辞的物品没有该字段。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
 同一桶超过大小限制时需要读取该桶的所有分块。
 
 ### 可选配方分桶

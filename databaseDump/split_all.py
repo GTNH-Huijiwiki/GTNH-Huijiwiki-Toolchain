@@ -1,6 +1,6 @@
 """
 split_all.py
-Unified splitter for Items / Fluids / OreDictionary / Recipes / Research / Thaumonomicon.
+Unified splitter for Items / Fluids / OreDictionary / Recipes / Materials / Thaumonomicon.
 
 Usage:
     python split_all.py                    # all tasks
@@ -8,7 +8,6 @@ Usage:
     python split_all.py fluids             # Fluids only
     python split_all.py oredict            # OreDictionary only (requires generated Items)
     python split_all.py recipes            # Recipes only
-    python split_all.py tc4research        # Thaumcraft research only
     python split_all.py thaumonomicon      # Thaumonomicon (categories, aspects, researches with pages)
     python split_all.py items fluids       # multiple
     python split_all.py --debug            # debug mode (limit output)
@@ -765,8 +764,42 @@ def do_items(debug: bool):
     if debug:
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
+    _attach_ore_dictionaries(items)
     write_item_names(items)
     clear_generated_pages(Path(VERSION) / "Items", {".tabx"})
+
+
+def attach_ore_dictionaries(items, entries):
+    """矿辞反向写回物品：属于矿辞的物品加 "oredict": [矿辞名, ...]，顺序与导出一致。
+
+    成员解析与 OreDictionary/ 页相同（normalize_ore_dictionary：:32767 通配展开为已导出的子类型），
+    两边结果一致。返回带矿辞的物品数。
+    """
+    flat, _ = normalize_ore_dictionary(entries, items)
+    by_key = defaultdict(list)
+    for ore, members in flat.items():
+        for key in members:
+            by_key[key].append(ore)
+    count = 0
+    for item in items:
+        ores = by_key.get(item["key"])
+        if ores:
+            item["oredict"] = ores
+            count += 1
+        else:
+            item.pop("oredict", None)
+    return count
+
+
+def _attach_ore_dictionaries(items):
+    path = os.path.join(DUMPS_DIR, "oreDictionary.json")
+    if not os.path.isfile(path) or not os.path.getsize(path):
+        print(f"  [OreDict] 跳过：缺少 {path}，物品不带 oredict 字段")
+        return
+    with open(path, "r", encoding="utf-8") as stream:
+        entries = json.load(stream)["oreDictionaries"]
+    count = attach_ore_dictionaries(items, entries)
+    print(f"  [OreDict] {count:,} items carry an oredict list")
 
 
 def _scan_schema(items: list) -> list[dict]:
@@ -879,6 +912,7 @@ def do_items_tabx(debug: bool):
     if debug:
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
+    _attach_ore_dictionaries(items)
     write_item_tables(items)
     write_item_names(items, write_items=False)
 
@@ -1409,43 +1443,6 @@ def do_ticmaterial(debug: bool):
     _split_flat_dict_impl(data, os.path.join(VERSION, "Ticmaterial"), debug)
 
 
-def do_tc4research(debug: bool):
-    """按当前数据源分页研究表，保留 tc4Researches 及每条研究的原字段。"""
-    source = Path(DUMPS_DIR) / "tc4research.json"
-    mod = local_mod_name()
-    select_owner = False
-    if not source.is_file() or not source.stat().st_size:
-        # 完整导出记录注册者后，附属可直接提取自己的研究，省去逐模组启动游戏。
-        source = Path(REFERENCE_DUMPS_DIR) / "tc4research.json"
-        if not mod or mod == "GTNH" or not source.is_file() or not source.stat().st_size:
-            print(f"跳过缺失或空的研究输入: {Path(DUMPS_DIR) / 'tc4research.json'}")
-            return
-        select_owner = True
-    data = json.loads(source.read_text(encoding="utf-8"))
-    records = data["tc4Researches"]
-    if mod == "GTNH":
-        excluded = addon_mods()
-        records = [row for row in records if (row.get("sourceMod") or "").casefold() not in excluded]
-    elif select_owner:
-        if records and not any(row.get("sourceMod") for row in records):
-            print(f"跳过 {mod} 研究：完整导出尚未记录 sourceMod")
-            return
-        records = [row for row in records if (row.get("sourceMod") or "").casefold() == mod.casefold()]
-        print(f"  [Tc4research] {mod}: selected {len(records)} by sourceMod")
-    output = Path(VERSION) / "Tc4research"
-    written = []
-    for part, content in enumerate(array_pages(
-            records, data, "tc4Researches", DEFAULT_MAX_BYTES, emit_empty=True)):
-        path = output / f"{part}.json"
-        write_bounded(path, content, HARD_MAX_BYTES)
-        written.append(path)
-        if debug and len(written) == 5:
-            break
-    if not debug:
-        clear_generated_pages(output, {".json"}, keep=written)
-    print(f"  [Tc4research] {len(records):,} researches -> {len(written)} file(s)")
-
-
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
 # 页内数组字段名是线上 Lua 做 $unwind 时使用的名字，改动会破坏查询，需与 Lua 同步。
 # 魔导手册的贴图不由本工具处理，已一次性上传到 File:Thaumonomicon-Asset-*，命名规则见 README。
@@ -1461,14 +1458,14 @@ def do_thaumonomicon(debug: bool):
 
     输入是 Dumper 的「TC4 Thaumonomicon」导出，顶层 categories / aspects / researches 三段，
     每段是以分类 key、要素 tag、研究 key 为键的映射。输出把每段展开成记录数组并分页：
-    每个子目录是数字分页，页内一个顶层数组（与 Tc4research 相同，便于线上 Lua 用 $unwind 查询）。
+    每个子目录是数字分页，页内一个顶层数组，便于线上 Lua 用 $unwind 查询。
     记录原样保留导出器的字段，不做改写；顺序沿用导出（研究按分类、列、行排序）。
 
-    范围划分与 do_tc4research 相同，每次只处理 .env 选择的一个模组：
+    每次只处理 .env 选择的一个模组：
     - GTNH：排除 addon-mods.json 里的附属，缺少 sourceMod 的旧记录保留；
     - 附属：优先读自己的 filtered 目录；没有时从完整导出按 sourceMod 精确选择。
     分类只保留仍有研究的（附属的分类不会带上基础包分类）；要素没有归属，只属于 GTNH。
-    输入缺失或为空时跳过。与 Tc4research 互不影响，线上两者并存。
+    输入缺失或为空时跳过。它取代了旧的 Tc4research 研究表（已不再生成）。
     """
     source = Path(DUMPS_DIR) / "tc4thaumonomicon.json"
     mod = local_mod_name()
@@ -1491,7 +1488,7 @@ def do_thaumonomicon(debug: bool):
             return
         researches = [row for row in researches if (row.get("sourceMod") or "").casefold() == mod.casefold()]
         print(f"  [Thaumonomicon] {mod}: selected {len(researches)} by sourceMod")
-    # Category 是本地化分类名（与 Tc4research 一致），CategoryKey 才是分类的 key，与 categories 的键对应。
+    # Category 是本地化分类名，CategoryKey 才是分类的 key，与 categories 的键对应。
     used = {row.get("CategoryKey") for row in researches}
     rows = {
         "categories": [row for row in data.get("categories", {}).values() if row.get("Key") in used],
@@ -1512,6 +1509,29 @@ def do_thaumonomicon(debug: bool):
         if output.is_dir() and not debug:
             clear_generated_pages(output, {".json"}, keep=written)
         print(f"  [Thaumonomicon/{folder}] {len(rows[section]):,} records -> {len(written)} file(s)")
+
+
+def do_quests(debug: bool):
+    """dumps/betterquesting -> QuestLines/N.json、Quests/N.json（任务书，整合包整体所有）。
+
+    输入是 GTNH-Dumper 复制的 DefaultQuests 与 lang/zh_CN.lang；整理规则见 quests.py 与 README。
+    只有 GTNH 处理；附属模组和缺少输入时跳过。
+    """
+    from quests import export_quests
+    source = Path(DUMPS_DIR) / "betterquesting"
+    if local_mod_name() != "GTNH":
+        print("跳过任务书：只属于 GTNH 整合包")
+        return
+    if not (source / "DefaultQuests").is_dir() or not (source / "lang/zh_CN.lang").is_file():
+        print(f"跳过缺失的任务书输入: {source}")
+        return
+    result = export_quests(source / "DefaultQuests", source / "lang/zh_CN.lang", Path(VERSION), dry_run=debug)
+    print(f"  [Quests] {result['questLines']} quest lines, {result['quests']} quests -> "
+          f"QuestLines {result['pages']['QuestLines']} / Quests {result['pages']['Quests']} file(s)")
+    if result["missing"]:
+        print(f"  [Quests] {len(result['missing'])} 项译文缺失，保留原文")
+    for warning in result["warnings"][:20]:
+        print(f"  [Quests] 警告（已保留源引用）: {warning}")
 
 
 def _fix_recipe_format(recipes: list, filepath: str) -> list:
@@ -1923,8 +1943,8 @@ TASKS = {
     "recipes":    ("Recipes",      do_recipes),
     "gtmaterial": ("GtMaterial",   do_gtmaterial),
     "ticmaterial":("TicMaterial",  do_ticmaterial),
-    "tc4research":("Tc4research", do_tc4research),
     "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
+    "quests":     ("Quests",       do_quests),
 }
 
 STANDALONE_TASKS = {
@@ -1997,7 +2017,7 @@ def configure_source(require_source: bool = True):
     if require_source and not Path(DUMPS_DIR).is_dir():
         raise ValueError(
             f"数据源目录不存在: {DUMPS_DIR}。"
-            "仅处理研究时可运行 python split_all.py tc4research 或 thaumonomicon，从完整导出按来源提取。"
+            "仅处理魔导手册时可运行 python split_all.py thaumonomicon，从完整导出按来源提取。"
         )
     VERSION = os.path.join(_PROJECT_ROOT, "wikitext", "Data", "Versions", mod, version)
     # NBT 判断依赖当前模组的配方，不能复用其他模组的扫描缓存。
@@ -2020,7 +2040,7 @@ def main():
             print(f"Unknown task(s): {unknown}")
             print(f"Available: {', '.join(all_tasks.keys())}")
             return
-    configure_source(require_source=any(key not in ("tc4research", "thaumonomicon") for key in tasks_to_run))
+    configure_source(require_source=any(key != "thaumonomicon" for key in tasks_to_run))
     if debug:
         print("[DEBUG mode]\n")
     if tabx:

@@ -8,6 +8,9 @@ data_upload.py
     python data_upload.py                   # 全部上传（8 线程）
     python data_upload.py --debug           # 前 20 个文件
     python data_upload.py -t 16             # 16 线程
+    python data_upload.py --no-delete       # 只上传，不执行删除
+
+上传全部成功后，再删除 wiki_inventory.py 列出的 pending_delete 页面。
 """
 
 import os
@@ -176,6 +179,8 @@ def edit_page(opener, title: str, text: str, summary: str = "", bot: bool = True
         r = _post_form(opener, params)
         if "error" in r:
             err = r["error"]["info"]
+            if r["error"].get("code") == "missingtitle":
+                return r  # 已经不存在，目标达成
             if ("Invalid CSRF" in err or "badtoken" in err.lower()) and attempt == 0:
                 r2 = _get(opener, {"action": "query", "meta": "tokens", "format": "json"})
                 params["token"] = r2["query"]["tokens"]["csrftoken"]
@@ -205,6 +210,8 @@ def delete_page(opener, title: str, reason: str = "", bot: bool = True) -> dict:
         r = _post_form(opener, params)
         if "error" in r:
             err = r["error"]["info"]
+            if r["error"].get("code") == "missingtitle":
+                return r  # 已经不存在，目标达成
             if ("Invalid CSRF" in err or "badtoken" in err.lower()) and attempt == 0:
                 r2 = _get(opener, {"action": "query", "meta": "tokens", "format": "json"})
                 params["token"] = r2["query"]["tokens"]["csrftoken"]
@@ -354,45 +361,54 @@ def main(argv=None):
             failures += counters["FAIL"]
 
     # ── Delete ──
-    # delete_titles = get_pending_deletes()
-    # if delete_titles:
-    #     if debug:
-    #         delete_titles = delete_titles[:5]
-    #
-    #     total = len(delete_titles)
-    #     print(f"\n{total:,} pending deletes, {min(threads, total)} threads")
-    #
-    #     chunks = [[] for _ in range(min(threads, total))]
-    #     for i, t in enumerate(delete_titles):
-    #         chunks[i % len(chunks)].append(t)
-    #
-    #     counters = {"OK": 0, "FAIL": 0, "done": 0}
-    #     lock = threading.Lock()
-    #     workers = []
-    #     for tid in range(len(chunks)):
-    #         if not chunks[tid]:
-    #             continue
-    #         t = threading.Thread(
-    #             target=delete_worker,
-    #             args=(chunks[tid], total, counters, lock, master_jar),
-    #             daemon=True,
-    #         )
-    #         t.start()
-    #         workers.append(t)
-    #
-    #     print(f"Deleting {total} pages... (Ctrl+C to stop)\n")
-    #
-    #     for t in workers:
-    #         while t.is_alive():
-    #             t.join(timeout=0.5)
-    #
-    #     remaining = len(get_pending_deletes())
-    #     print(f"Delete done! OK: {counters['OK']}, FAIL: {counters['FAIL']}")
-    #     failures += counters['FAIL']
-    #     if remaining:
-    #         print(f"{remaining} deletes still pending (re-run to retry failures)")
-    # else:
-    #     print("No pending deletes.")
+    # 删除在新数据全部上传成功之后进行：上传有失败、中断或调试时不删，旧页面保留到下次。
+    # 删除清单由 wiki_inventory.py 生成：保留目录与本地整个缺失的目录不会进入清单。
+    delete_titles = get_pending_deletes()
+    if "--no-delete" in args:
+        print(f"Skipped {len(delete_titles):,} pending deletes (--no-delete).")
+    elif delete_titles and (failures or _stop.is_set()
+                            or any(in_scope(title, WIKI_PREFIX) for _, title in get_pending_uploads())):
+        print(f"{len(delete_titles):,} deletes postponed: finish all uploads first.")
+    elif delete_titles:
+        if debug:
+            delete_titles = delete_titles[:5]
+
+        total = len(delete_titles)
+        print()
+        print(f"{total:,} pending deletes, {min(threads, total)} threads")
+
+        chunks = [[] for _ in range(min(threads, total))]
+        for i, t in enumerate(delete_titles):
+            chunks[i % len(chunks)].append(t)
+
+        counters = {"OK": 0, "FAIL": 0, "done": 0}
+        lock = threading.Lock()
+        workers = []
+        for tid in range(len(chunks)):
+            if not chunks[tid]:
+                continue
+            t = threading.Thread(
+                target=delete_worker,
+                args=(chunks[tid], total, counters, lock, master_jar),
+                daemon=True,
+            )
+            t.start()
+            workers.append(t)
+
+        print(f"Deleting {total} pages... (Ctrl+C to stop)")
+        print()
+
+        for t in workers:
+            while t.is_alive():
+                t.join(timeout=0.5)
+
+        remaining = len(get_pending_deletes())
+        print(f"Delete done! OK: {counters['OK']}, FAIL: {counters['FAIL']}")
+        failures += counters['FAIL']
+        if remaining:
+            print(f"{remaining} deletes still pending (re-run to retry failures)")
+    else:
+        print("No pending deletes.")
     return 130 if _stop.is_set() else (1 if failures else 0)
 
 

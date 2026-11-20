@@ -8,7 +8,7 @@
 
 - `wiki.py`：MediaWiki API 辅助脚本，负责登录、读写页面、文件同步等基础操作。
 - `databaseDump/`：数据拆分、任务清单、图标与重定向上传的主流程。
-- `questUpload/`：将 BetterQuesting 任务书汉化，导出并上传当前版本的 QuestLines / Quests JSON 数据页，见 [运行说明](questUpload/README.md)。
+- 任务书（QuestLines / Quests）已并入 `databaseDump/split_all.py quests`，见 [databaseDump/README.md](databaseDump/README.md)。
 
 ## 主要用途
 p

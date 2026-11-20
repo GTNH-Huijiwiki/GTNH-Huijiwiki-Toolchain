@@ -1,4 +1,7 @@
-"""更新本地图片与中文别名状态；--stats 查看统计，--clean-dynamic 清理动画条带任务。"""
+"""更新本地图片与中文别名状态，并对照线上文件判定哪些需要重传（规则见 image_check.py）。
+
+--offline 不查询线上；--stats 查看统计；--clean-dynamic 清理动画条带任务。
+"""
 
 import os
 import sqlite3
@@ -6,7 +9,8 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
-from image_state import init_db as initialize_state, update_state, icon_hashes
+from image_state import init_db as initialize_state, update_state, icon_hashes, HASH_CACHE
+from image_check import check_pending, exempt_icons
 from image_plan import prepare_plan
 from image_version import image_paths, require_source
 
@@ -47,13 +51,19 @@ def stats():
                 print(f"  {column} {state}: {count:,}")
 
 
-def update_inventory():
+WIKI_ORIGINALS = Path(__file__).resolve().parent / "source_state" / "wiki-originals"
+
+
+def update_inventory(offline=False):
     require_source(DUMPS_DIR)
     plan = prepare_plan(DUMPS_DIR, NEW_CSV)
     redirects = plan['redirects']
     icons = set(plan['uploadIcons'])
-    update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons))
-    print(f"Current icons: {len(icons):,}; current redirects: {len(redirects):,}")
+    exempt = exempt_icons(DUMPS_DIR)
+    update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons, HASH_CACHE), exempt)
+    print(f"Current icons: {len(icons):,}; current redirects: {len(redirects):,}; exempt: {len(exempt):,}")
+    if not offline:
+        print(check_pending(DB_PATH, ICONS_DIR, icons, exempt, WIKI_ORIGINALS))
     stats()
 
 
@@ -71,7 +81,7 @@ def main():
     elif "--clean-dynamic" in sys.argv:
         clean_dynamic()
     else:
-        update_inventory()
+        update_inventory(offline="--offline" in sys.argv)
 
 
 if __name__ == "__main__":
