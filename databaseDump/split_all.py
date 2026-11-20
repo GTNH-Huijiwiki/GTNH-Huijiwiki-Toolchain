@@ -1593,12 +1593,13 @@ def localize_biomes(biomes, names) -> list:
     群系名匹配顺序：群系 ID → 英文名加生态之书页码 → 唯一的英文名（同名群系必须靠前两种区分）。
     """
     by_id = {entry["id"]: entry["zh"] for entry in names["biomes"] if "id" in entry}
-    by_pages = {(entry["name"], tuple(entry.get("bookPages", ()))): entry["zh"] for entry in names["biomes"]}
+    # 只有带书页码的条目才按“英文名加页码”匹配，空页码不能区分同名群系。
+    by_pages = {(entry["name"], tuple(entry["bookPages"])): entry["zh"] for entry in names["biomes"] if entry.get("bookPages")}
     counts = Counter(entry["name"] for entry in names["biomes"])
     by_name = {entry["name"]: entry["zh"] for entry in names["biomes"] if counts[entry["name"]] == 1}
     missing = []
     for biome in biomes:
-        zh = by_id.get(biome["id"]) or by_pages.get((biome["name"], tuple(biome.get("bookPages", ()))))             or by_name.get(biome["name"])
+        zh = by_id.get(biome["id"]) or (biome.get("bookPages") and by_pages.get((biome["name"], tuple(biome["bookPages"]))))             or by_name.get(biome["name"])
         if zh:
             biome["nameZh"] = zh
         else:
