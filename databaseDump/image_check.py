@@ -18,6 +18,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -149,8 +150,16 @@ def download(url: str, sha1: str, cache_dir: Path) -> bytes:
     if path.is_file():
         return path.read_bytes()
     request = urllib.request.Request(url, headers={'User-Agent': BROWSER_UA, 'Referer': 'https://gtnh.huijiwiki.com/'})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        data = response.read()
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = response.read()
+            break
+        except OSError:
+            # CDN 偶尔在并发下断开连接；稍等后重试。
+            if attempt == 2:
+                raise
+            time.sleep(2 * (attempt + 1))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     return data
