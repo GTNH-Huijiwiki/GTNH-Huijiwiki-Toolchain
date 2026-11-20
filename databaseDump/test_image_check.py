@@ -102,6 +102,22 @@ class StateTest(unittest.TestCase):
             self.assertEqual(sorted(query.call_args.args[0]), ['new.png'])
 
 
+class HashCacheTest(unittest.TestCase):
+    def test_unchanged_files_come_from_cache(self):
+        from image_state import icon_hashes
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'a.png').write_bytes(b'one')
+            cache = root / 'cache.json'
+            first = icon_hashes(root, {'a.png'}, cache)
+            with patch('hashlib.sha1', side_effect=AssertionError('file was read again')):
+                self.assertEqual(icon_hashes(root, {'a.png'}, cache), first)
+            (root / 'a.png').write_bytes(b'changed')
+            import os
+            os.utime(root / 'a.png', ns=(1, 1))
+            self.assertNotEqual(icon_hashes(root, {'a.png'}, cache), first)
+
+
 class StabilityTest(unittest.TestCase):
     def test_unstable_list_only_grows(self):
         with tempfile.TemporaryDirectory() as tmp:

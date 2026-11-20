@@ -62,8 +62,47 @@ def set_uploaded(conn, name, sha1, exempt=None):
                  "WHERE icon_name=?", (name,))
 
 
-def icon_hashes(directory, icons):
-    return {name: hashlib.sha1((Path(directory) / name).read_bytes()).hexdigest() for name in icons}
+HASH_CACHE = Path(__file__).resolve().parent / "source_state" / "file-sha1-cache.json"
+
+
+def icon_hashes(directory, icons, cache_path=None):
+    """文件 sha1；按（文件名、大小、修改时间）缓存在 source_state，未变的文件不再读取。
+
+    GTNH-Dumper 输出的 PNG 是其内容缓存的硬链接，像素不变时修改时间也不变，重跑时几乎全部命中。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    import json
+    import os
+    icons = set(icons)
+    cache = {}
+    if cache_path is not None and Path(cache_path).is_file():
+        cache = json.loads(Path(cache_path).read_text("utf-8"))
+    stats = {entry.name: (entry.stat().st_size, entry.stat().st_mtime_ns)
+             for entry in os.scandir(directory) if entry.name in icons}
+    missing = icons - stats.keys()
+    if missing:
+        raise FileNotFoundError(f"图标文件缺失: {sorted(missing)[:5]}")
+    result, todo = {}, []
+    for name, (size, mtime) in stats.items():
+        hit = cache.get(name)
+        if hit and hit[0] == size and hit[1] == mtime:
+            result[name] = hit[2]
+        else:
+            todo.append(name)
+
+    def digest(name):
+        return name, hashlib.sha1((Path(directory) / name).read_bytes()).hexdigest()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for name, sha1 in pool.map(digest, todo):
+            result[name] = sha1
+    if cache_path is not None:
+        cache.update({name: [stats[name][0], stats[name][1], result[name]] for name in todo})
+        Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(cache_path).write_text(json.dumps(cache, separators=(",", ":")), "utf-8")
+    if todo:
+        print(f"Hashed {len(todo):,} image files; {len(result) - len(todo):,} from cache", flush=True)
+    return result
 
 
 def mark_uploaded(path, name, sha1):

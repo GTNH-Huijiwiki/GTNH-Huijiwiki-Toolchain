@@ -23,7 +23,7 @@ import urllib.parse
 import http.cookiejar
 from image_version import image_paths, require_source
 from image_plan import prepare_plan
-from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy
+from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy, HASH_CACHE
 from image_check import check_pending, exempt_icons
 from pathlib import Path
 from item_names import canonical_file
@@ -77,7 +77,7 @@ def get_pending_icons(plan=None) -> list[str]:
         plan = prepare_plan(DUMPS_DIR, NEW_CSV)
     current_icons = set(plan['uploadIcons'])
     exempt = exempt_icons(DUMPS_DIR)
-    update_state(INVENTORY_DB, current_icons, plan['redirects'], icon_hashes(ICONS_DIR, current_icons), exempt)
+    update_state(INVENTORY_DB, current_icons, plan['redirects'], icon_hashes(ICONS_DIR, current_icons, HASH_CACHE), exempt)
     with closing(sqlite3.connect(INVENTORY_DB)) as conn:
         legacy = [r[0] for r in conn.execute("SELECT icon_name FROM images WHERE icon_state='待核验'")
                   if r[0] in current_icons]

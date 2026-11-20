@@ -9,7 +9,7 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
-from image_state import init_db as initialize_state, update_state, icon_hashes
+from image_state import init_db as initialize_state, update_state, icon_hashes, HASH_CACHE
 from image_check import check_pending, exempt_icons
 from image_plan import prepare_plan
 from image_version import image_paths, require_source
@@ -60,7 +60,7 @@ def update_inventory(offline=False):
     redirects = plan['redirects']
     icons = set(plan['uploadIcons'])
     exempt = exempt_icons(DUMPS_DIR)
-    update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons), exempt)
+    update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons, HASH_CACHE), exempt)
     print(f"Current icons: {len(icons):,}; current redirects: {len(redirects):,}; exempt: {len(exempt):,}")
     if not offline:
         print(check_pending(DB_PATH, ICONS_DIR, icons, exempt, WIKI_ORIGINALS))
