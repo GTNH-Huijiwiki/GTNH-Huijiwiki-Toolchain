@@ -98,7 +98,7 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 
 `python split_all.py thaumonomicon` 读取 GTNH-Dumper 的 `tc4thaumonomicon.json`，写到
 `Data:Versions/<远端模组名>/<版本>/Thaumonomicon/` 下三个子目录，每个都是数字分页
-（`0.json`、`1.json`…），页内是一个顶层数组，线上 Lua 可像 `Tc4research` 一样用 `$unwind` 查询：
+（`0.json`、`1.json`…），页内是一个顶层数组，线上 Lua 用 `$unwind` 查询：
 
 | 子目录 | 页内数组 | 内容 |
 |---|---|---|
@@ -107,10 +107,29 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 | `Researches/` | `tc4ThaumonomiconResearches` | 研究：坐标、依赖、要素消耗、图标、全部页面 |
 
 记录保持导出器的原字段，按分类、列、行排序。每页严格不超过 2,000,000 字节。
-研究的范围划分与 `Tc4research` 相同：`GTNH` 排除 `addon-mods.json` 中的附属，附属按 `sourceMod` 选择；
-分类只保留仍有研究的。物品与研究的关联由线上 Lua 根据配方数据完成，本工具不做。
-默认任务会包含它，也可单独运行；输入文件缺失或为空时跳过。`Tc4research` 保持不变。
-研究的 `Category` 是本地化分类名（与 `Tc4research` 相同），`CategoryKey` 是分类 key，对应分类记录的 `Key`。
+物品与研究的关联由线上 Lua 根据配方数据完成，本工具不做。
+默认任务会包含它，也可单独运行；输入文件缺失或为空时跳过。
+研究的 `Category` 是本地化分类名，`CategoryKey` 是分类 key，对应分类记录的 `Key`。
+
+它取代了旧的 `Tc4research` 研究表：Dumper 的 `tc4thaumonomicon.json` 包含 `tc4research.json` 的全部字段，
+工具链不再读取 `tc4research.json`，也不再生成 `Tc4research/` 数据页。
+
+### 范围划分
+
+每次运行处理 `.env` 中选择的一个模组与版本。`MOD_LOCAL_NAME=GTNH` 时读取完整导出，
+按研究的 `sourceMod` 排除 [config/addon-mods.json](config/addon-mods.json) 列出的额外附属；
+Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧记录保留。
+公共列表填写注册 Mod ID，目前包含 `TwistSpaceTechnology`、`sciencenotleisure` 和
+`programmablehatches`，目前只用于魔导手册的范围划分。
+
+处理附属时，`MOD_LOCAL_NAME` 填注册 Mod ID，`MOD_REMOTE_NAME`、`MOD_VERSION` 指定目标目录。
+附属优先读取自身 filtered 目录里的 `tc4thaumonomicon.json`；缺少独立导出时，从完整导出按
+`sourceMod` 精确选择注册者，比较时忽略大小写。该字段由 Dumper 在研究注册时记录，研究可以位于任意分类。
+分类只保留仍有研究的，附属不会带上基础包的分类；要素没有归属，只写入 GTNH。
+尚无该附属的 filtered 目录时，使用 `python split_all.py thaumonomicon` 单独处理；
+默认全部任务及其他任务需要附属自己的数据目录。
+完整导出尚无来源字段时跳过附属提取，已有独立 filtered 导出继续使用。
+新增额外附属时，将注册 ID 加入公共列表，再分别处理 GTNH 和该附属的目标版本。
 
 **贴图**不由本工具处理，已由维基一次性上传，Dumper 导出的 `tc4thaumonomicon-assets/` 不进工具链。
 数据里的贴图用 `域名:路径` 标识（如 `thaumcraft:textures/gui/gui_researchback.png`，
@@ -121,27 +140,6 @@ Items 目录缺失、没有分页或分页中没有物品记录时，矿辞处�
 扩展名规则：分类的 `Background` 字段指向的背景图是 `.webp`（有损），其余贴图保持原样的 `.png`。
 例如 `thaumcraft:textures/items/alumentum.png` 对应 `Thaumonomicon-Asset-thaumcraft-items-alumentum.png`。
 研究图标若是物品（`Icon` 字段），用物品图标，不在此列。
-
-## 神秘时代研究表
-
-默认拆分任务包含研究表，也可单独运行 `python split_all.py tc4research`。
-它将当前数据源的 `tc4research.json` 写为
-`Data:Versions/<远端模组名>/<版本>/Tc4research/0.json` 等数字分页，
-保留 `tc4Researches` 数组及研究原字段。每页按最终 UTF-8 字节分页，严格限制在 2,000,000 字节以内。
-
-每次运行处理 `.env` 中选择的一个模组与版本。`MOD_LOCAL_NAME=GTNH` 时读取完整研究表，
-排除 [config/addon-mods.json](config/addon-mods.json) 列出的额外附属来源；
-Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧记录保留。
-公共列表填写注册 Mod ID，目前包含 `TwistSpaceTechnology`、`sciencenotleisure` 和
-`programmablehatches`，供数据范围划分复用，目前用于研究表。
-
-处理附属时，`MOD_LOCAL_NAME` 填注册 Mod ID，`MOD_REMOTE_NAME`、`MOD_VERSION` 指定目标目录。
-附属优先读取自身 filtered 目录里的研究表；缺少独立导出时，从完整研究表按
-`sourceMod` 精确选择注册者，比较时忽略大小写。该字段由 Dumper 在研究注册时记录，研究可以位于任意分类。
-尚无该附属的 filtered 目录时，使用 `python split_all.py tc4research` 单独处理研究；
-默认全部任务及其他任务需要附属自己的数据目录。
-完整旧导出尚无来源字段时跳过附属提取，已有独立 filtered 研究表继续使用。
-新增额外附属时，将注册 ID 加入公共列表，再分别处理 GTNH 和该附属的目标版本。
 
 ## 配方输入与输出归类
 
