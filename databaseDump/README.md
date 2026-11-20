@@ -176,6 +176,19 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 数组名仍为 `abbreviatedName`；其余字段（维度 ID、Provider 参数、`galacticSpaceInfo` 等）和 `key` 原样保留。
 旧版 Dumper 的 `{"abbreviatedName": [...]}` 原样通过。字段含义见 GTNH-Dumper README 的“维度与星系参数”。
 
+## 生物群系（Biomes）
+
+`python split_all.py biomes` 读 GTNH-Dumper 的 `biomes.json`，默认任务包含它，只有 `MOD_LOCAL_NAME=GTNH` 处理：
+
+| 目录 | 内容 |
+|---|---|
+| `Biomes/N.json` | 数组 `biomes`，每个已注册群系一条：ID、英文名、类、温度、降水、高湿度、降雪、降雨、打雷、根高度、高度变化、颜色、地表与填充方块、BiomeDictionary 标签、林业气候、IC2 作物加成、各类生物的刷怪表（实体、权重、群组大小）、生态之书扩展版页码 |
+| `BiomeBooks/0.json` | 巫术的两本书：`bookOfBiomes`（季节变迁仪式指南，每类群系一页）与 `bookOfBiomesExtended`（每个群系一页，含游戏内显示的降雨、温度、降雪、打雷四行，中英文各一份，以及分节） |
+
+游戏里没有群系名、标签和林业气候的中文，拆分时从 `config/biome_names.json` 补 `nameZh`、`typesZh`、
+`forestryTemperatureZh`、`forestryHumidityZh`。群系按 ID → 英文名加书页码 → 唯一的英文名匹配；缺中文名的会列出来，补进配置即可。
+这份配置最初取自人工整理的 `Data:生物群系.json`（线上 `模块:生态之书群系表`、`模块:生物群系表`、`模块:蜜蜂` 目前仍读那份旧数据）。
+
 ## 任务书（Quests）
 
 `python split_all.py quests` 把任务书拆成两个目录，默认任务包含它：
@@ -407,7 +420,12 @@ Lua 查询一次读取命中名称桶的所有分页，使用 `$objectToArray` �
 保存每个物品的完整记录，包括名称、说明、图片映射、NBT 和原 `index`。
 原 `Items/` 根目录数字顺序分页在生成成功后清理，只保留一份物品数据。
 属于矿辞的物品带 `oredict` 列表（如 `"oredict": ["ingotSteel", "ingotAnySteel"]`，顺序同导出）：由 `oreDictionary.json`
-反向写回，成员解析与 `OreDictionary/` 页相同（`:32767` 通配展开为已导出的子类型），两边一致；不属于任何矿辞的物品没有该字段。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
+反向写回，成员解析与 `OreDictionary/` 页相同（`:32767` 通配展开为已导出的子类型），两边一致；不属于任何矿辞的物品没有该字段。
+有关联的物品还带 `researchKeys`（魔导手册研究 Key）与 `questIds`（任务 ID），规则与线上条目页的查询相同，没有关联则不带：
+研究——非虚拟、有分类的研究，以该物品为图标（没有贴图资源时）、物品扫描条件或页面（配方）产物；物品的 `key` 与 `rawKey`
+按 meta 规则扩展候选（非零 meta 匹配自身与 `:32767`，无 meta 或 `:0` 匹配 base、base:0、base:32767），见 模块:Thaumonomicon 的 related。
+任务——任务图标、要求的物品与流体、奖励与可选奖励中的堆栈（`id` 加非零 `:Damage`，流体 `fluid.名称`）与物品 `rawKey`（缺省为 `key`）
+精确相等，见 模块:Database/Quests。两者都只在 `MOD_LOCAL_NAME=GTNH` 时生成，输入为同一导出的 `tc4thaumonomicon.json` 与 `betterquesting/`。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
 同一桶超过大小限制时需要读取该桶的所有分块。
 
 ### 可选配方分桶

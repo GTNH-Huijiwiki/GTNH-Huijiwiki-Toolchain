@@ -741,6 +741,7 @@ def do_items(debug: bool):
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
     _attach_ore_dictionaries(items)
+    _attach_item_links(items)
     write_item_names(items)
     clear_generated_pages(Path(VERSION) / "Items", {".tabx"})
 
@@ -772,6 +773,119 @@ def require_ore_entries(entries, path):
     if not entries:
         raise ValueError(f"矿辞导出为空：{path}。请检查 Dumper 的矿辞导出后重新导出，不要用这份数据拆分或上传。")
     return entries
+
+
+# ── 物品与研究、任务的反向关联 ─────────────────────────────────
+# 规则与线上一致：研究见 模块:Thaumonomicon 的 related，任务见 模块:Database/Quests 的 itemCondition。
+
+def _stack_key(value):
+    """研究里的物品写作字符串或 {key, nbt}；附魔等没有 key 的产物返回 None。"""
+    if isinstance(value, dict):
+        value = value.get("key")
+    return value if isinstance(value, str) and value and not value.startswith("#") else None
+
+
+def research_keys_by_item(data) -> dict:
+    """物品 key（研究中出现的写法）→ 研究 Key 列表；只收非虚拟、且有分类的研究。
+
+    命中位置：研究图标（没有贴图资源时）、物品扫描条件、页面产物与页面配方产物。
+    """
+    categories = set(data.get("categories", {}))
+    index = defaultdict(list)
+    for research in data.get("researches", {}).values():
+        if research.get("IsVirtual") or research.get("CategoryKey") not in categories:
+            continue
+        refs = [] if research.get("IconResource") else [research.get("Icon")]
+        refs += research.get("ItemTriggerItems") or []
+        for page in research.get("Pages") or []:
+            refs.append(page.get("output"))
+            refs += [recipe.get("output") for recipe in page.get("recipes") or [] if isinstance(recipe, dict)]
+        for key in dict.fromkeys(filter(None, map(_stack_key, refs))):
+            index[key].append(research["Key"])
+    return index
+
+
+def research_candidates(key: str) -> list:
+    """带非零 meta 的 key 匹配自身与 :32767；无 meta 或 :0 匹配 base、base:0、base:32767。"""
+    base, sep, meta = key.rpartition(":")
+    if sep and meta.isdigit() and int(meta) not in (0, 32767):
+        return [key, base + ":32767"]
+    base = base if sep and meta.isdigit() else key
+    return [base, base + ":0", base + ":32767"]
+
+
+def quest_ids_by_item(quests) -> dict:
+    """堆栈 key（id 加非零 :Damage，流体为 fluid.名称）→ 任务 ID 列表。
+
+    命中位置：任务图标、任务要求的物品与流体、奖励与可选奖励。
+    """
+    def values(container):
+        if isinstance(container, dict):
+            return list(container.values())
+        return container if isinstance(container, list) else []
+
+    def stack_key(stack):
+        if not isinstance(stack, dict):
+            return None
+        if isinstance(stack.get("FluidName"), str):
+            return "fluid." + stack["FluidName"]
+        if isinstance(stack.get("id"), str):
+            damage = int(stack.get("Damage") or 0)
+            return stack["id"] + (f":{damage}" if damage else "")
+        return None
+
+    index = defaultdict(list)
+    for quest in quests:
+        stacks = [quest.get("properties", {}).get("betterquesting", {}).get("icon")]
+        for task in values(quest.get("tasks")):
+            if isinstance(task, dict):
+                stacks += values(task.get("requiredItems")) + values(task.get("requiredFluids"))
+        for reward in values(quest.get("rewards")):
+            if isinstance(reward, dict):
+                stacks += values(reward.get("rewards")) + values(reward.get("choices"))
+        for key in dict.fromkeys(filter(None, map(stack_key, stacks))):
+            index[key].append(quest["questID"])
+    return index
+
+
+def attach_item_links(items, research_index, quest_index):
+    """给物品加 researchKeys / questIds（无关联则不加）；返回 (带研究的物品数, 带任务的物品数)。
+
+    研究用 key 与 rawKey 的候选写法匹配；任务用 rawKey（缺省为 key）精确匹配，与条目页查询相同。
+    """
+    with_research = with_quests = 0
+    for item in items:
+        keys = [k for k in (item.get("key"), item.get("rawKey")) if k]
+        research = list(dict.fromkeys(r for k in keys for c in research_candidates(k) for r in research_index.get(c, ())))
+        quests = sorted(set(quest_index.get(item.get("rawKey") or item.get("key"), ())))
+        for field, values in (("researchKeys", research), ("questIds", quests)):
+            if values:
+                item[field] = values
+            else:
+                item.pop(field, None)
+        with_research += bool(research)
+        with_quests += bool(quests)
+    return with_research, with_quests
+
+
+def _attach_item_links(items):
+    if local_mod_name() != "GTNH":
+        return
+    research_index, quest_index = {}, {}
+    thaumonomicon = Path(DUMPS_DIR) / "tc4thaumonomicon.json"
+    if thaumonomicon.is_file() and thaumonomicon.stat().st_size:
+        research_index = research_keys_by_item(json.loads(thaumonomicon.read_text(encoding="utf-8")))
+    source = Path(DUMPS_DIR) / "betterquesting"
+    if (source / "DefaultQuests").is_dir():
+        from quests import build_records, read_lang
+        lang = source / "lang/zh_CN.lang"
+        _, quests, _, _ = build_records(source / "DefaultQuests", read_lang(lang) if lang.is_file() else {})
+        quest_index = quest_ids_by_item(quests)
+    if not research_index and not quest_index:
+        print("  [Links] 跳过：缺少魔导手册与任务书输入")
+        return
+    with_research, with_quests = attach_item_links(items, research_index, quest_index)
+    print(f"  [Links] {with_research:,} items carry researchKeys; {with_quests:,} carry questIds")
 
 
 def _attach_ore_dictionaries(items):
@@ -893,6 +1007,7 @@ def do_items_tabx(debug: bool):
         batches = split_array(items, "items", True)
         items = items[:batches[-1][1]] if batches else []
     _attach_ore_dictionaries(items)
+    _attach_item_links(items)
     write_item_tables(items)
     write_item_names(items, write_items=False)
 
@@ -1469,6 +1584,66 @@ def do_dimensions(debug: bool):
     print(f"  {len(rows):,} dimensions ({galactic} with galacticSpaceInfo) -> {len(written)} file(s)")
 
 
+BIOME_NAMES_CONFIG = Path(AUX_DIR) / "config" / "biome_names.json"
+
+
+def localize_biomes(biomes, names) -> list:
+    """给群系补中文：nameZh、typesZh、forestryTemperatureZh、forestryHumidityZh；返回缺中文名的群系。
+
+    群系名匹配顺序：群系 ID → 英文名加生态之书页码 → 唯一的英文名（同名群系必须靠前两种区分）。
+    """
+    by_id = {entry["id"]: entry["zh"] for entry in names["biomes"] if "id" in entry}
+    # 只有带书页码的条目才按“英文名加页码”匹配，空页码不能区分同名群系。
+    by_pages = {(entry["name"], tuple(entry["bookPages"])): entry["zh"] for entry in names["biomes"] if entry.get("bookPages")}
+    counts = Counter(entry["name"] for entry in names["biomes"])
+    by_name = {entry["name"]: entry["zh"] for entry in names["biomes"] if counts[entry["name"]] == 1}
+    missing = []
+    for biome in biomes:
+        zh = by_id.get(biome["id"]) or (biome.get("bookPages") and by_pages.get((biome["name"], tuple(biome["bookPages"]))))             or by_name.get(biome["name"])
+        if zh:
+            biome["nameZh"] = zh
+        else:
+            missing.append(biome["name"])
+        biome["typesZh"] = [names["types"].get(tag, tag) for tag in biome.get("types", [])]
+        for field, table in (("forestryTemperature", "forestryTemperature"), ("forestryHumidity", "forestryHumidity")):
+            if biome.get(field):
+                biome[field + "Zh"] = names[table].get(biome[field], biome[field])
+    return missing
+
+
+def do_biomes(debug: bool):
+    """biomes.json -> Biomes/N.json（群系）与 BiomeBooks/0.json（巫术的两本生态之书）。
+
+    群系记录保留 Dumper 的全部字段（温湿度、降水与降雪、高度、方块、BiomeDictionary 标签、林业气候、
+    IC2 作物加成、刷怪表、生态之书扩展版页码），另补中文名与标签、气候的中文（config/biome_names.json）。
+    只有 GTNH 处理；附属模组和缺少输入时跳过。
+    """
+    print("=" * 50)
+    print("[Biomes]")
+    print("=" * 50)
+    if local_mod_name() != "GTNH":
+        print("  跳过群系：只属于 GTNH 整合包")
+        return
+    path = Path(DUMPS_DIR) / "biomes.json"
+    if not path.is_file() or not path.stat().st_size:
+        print(f"  跳过缺失或空的群系输入: {path}")
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    biomes = data["biomes"]
+    missing = localize_biomes(biomes, json.loads(BIOME_NAMES_CONFIG.read_text(encoding="utf-8")))
+    output = Path(VERSION) / "Biomes"
+    written = write_array_pages(biomes, {}, "biomes", output, HARD_MAX_BYTES)
+    if not debug:
+        clear_generated_pages(output, {".json"}, keep=written)
+    books = {key: data[key] for key in ("bookOfBiomes", "bookOfBiomesExtended") if key in data}
+    if books:
+        write_bounded(Path(VERSION) / "BiomeBooks" / "0.json", encode_json(books), HARD_MAX_BYTES)
+    extended = len(books.get("bookOfBiomesExtended", {}).get("pages", []))
+    print(f"  {len(biomes):,} biomes -> {len(written)} file(s); book pages: {extended}")
+    if missing:
+        print(f"  {len(missing)} 个群系没有中文名（补到 config/biome_names.json）: {', '.join(missing[:20])}")
+
+
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
 # 页内数组字段名是线上 Lua 做 $unwind 时使用的名字，改动会破坏查询，需与 Lua 同步。
 # 魔导手册的贴图不由本工具处理，已一次性上传到 File:Thaumonomicon-Asset-*，命名规则见 README。
@@ -1972,6 +2147,7 @@ TASKS = {
     "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
     "quests":     ("Quests",       do_quests),
     "dimensions": ("Dimensions",   do_dimensions),
+    "biomes":     ("Biomes",       do_biomes),
 }
 
 STANDALONE_TASKS = {
