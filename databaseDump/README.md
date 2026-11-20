@@ -69,7 +69,7 @@ MOD_VERSION=1.0.0
 线上有而本地没有的删除；`data_upload.py` 在全部上传成功后才执行删除（`--no-delete` 只上传）。
 线上标题用 allpages 按前缀列举，比较时下划线与空格视为同一字符。以下情况不删除，记为 `kept_online`：
 
-- 保留目录 `KEEP_ONLINE_DIRS`：目前只有 `gtnhdimension/`（线上维度数据含 Dumper 尚未导出的字段，暂作特例）。
+- 保留目录 `KEEP_ONLINE_DIRS`（`wiki_inventory.py` 中写死）：工具链不生成、但线上需要保留的目录。目前为空。
 - 本地整个目录都不存在（例如某个拆分任务因缺输入而跳过）。确实要移除整个目录时用
   `python wiki_inventory.py --delete-dir <目录名>` 点名。
 
@@ -147,6 +147,17 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 扩展名规则：分类的 `Background` 字段指向的背景图是 `.webp`（有损），其余贴图保持原样的 `.png`。
 例如 `thaumcraft:textures/items/alumentum.png` 对应 `Thaumonomicon-Asset-thaumcraft-items-alumentum.png`。
 研究图标若是物品（`Icon` 字段），用物品图标，不在此列。
+
+## 维度（Dimensions）
+
+`python split_all.py dimensions` 把 GTNH-Dumper 的 `gtnhdimension.json` 写到 `gtnhdimension/0.json`，默认任务包含它，
+只有 `MOD_LOCAL_NAME=GTNH` 处理，输入缺失时跳过。
+
+新版 Dumper 输出 `{"dimensions": [...]}`：每条记录以 `key` 标识，GTNEI 字段（`abbreviatedName`、`internalName`、`fullName`、
+`originalName`、`localizedName`、`tier`、`stoneTypes`）放在 `gtneiInfo` 里，还追加了 GTNEI 没收录的 Forge 维度（`key` 为 `dim:<ID>`）。
+线上 `模块:Database`、`模块:条目/维度`、`模块:条目/属性接口` 读取的是平铺结构，所以发布时把 `gtneiInfo` 的字段提回顶层，
+数组名仍为 `abbreviatedName`；其余字段（维度 ID、Provider 参数、`galacticSpaceInfo` 等）和 `key` 原样保留。
+旧版 Dumper 的 `{"abbreviatedName": [...]}` 原样通过。字段含义见 GTNH-Dumper README 的“维度与星系参数”。
 
 ## 任务书（Quests）
 

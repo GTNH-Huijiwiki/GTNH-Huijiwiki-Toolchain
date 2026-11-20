@@ -41,6 +41,7 @@ class InventoryScopeTest(unittest.TestCase):
         self.assertEqual(result, {'Recipes/gregtech/a/00/0.json': 'pending_delete', 'Quests/1.json': 'pending_delete'})
 
     def test_kept_and_missing_directories_need_explicit_consent(self):
+        self.enterContext(patch.object(wiki_inventory, 'KEEP_ONLINE_DIRS', frozenset({'gtnhdimension'})))
         online = {'gtnhdimension/0.json', 'Tc4research/0.json'}
         self.assertEqual(self.rebuild(online), {'gtnhdimension/0.json': 'kept_online', 'Tc4research/0.json': 'kept_online'})
         self.assertEqual(self.rebuild(online, {'Tc4research', 'gtnhdimension'}),

@@ -24,7 +24,7 @@ from item_names import build_artifacts, image_name_config, read_items, write_ite
 from nbt_identity import nbt_identity
 from item_exclusions import load_policy
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
-from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_bounded
+from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_array_pages, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
 
 # Ensure real-time progress output
@@ -1443,6 +1443,52 @@ def do_ticmaterial(debug: bool):
     _split_flat_dict_impl(data, os.path.join(VERSION, "Ticmaterial"), debug)
 
 
+# 线上 模块:Database、模块:条目/维度、模块:条目/属性接口 读取的维度记录结构（容器与字段名），改动需与 Lua 同步。
+DIMENSION_ARRAY = "abbreviatedName"
+
+
+def flatten_dimension(record: dict) -> dict:
+    """新版 Dumper 把 GTNEI 字段放在 gtneiInfo 里；线上读取的是平铺结构，这里提回顶层。
+
+    顶层字段优先（两者不重名）；没有 gtneiInfo 的维度（Forge 追加的 dim:<ID>）原样保留。
+    """
+    flat = dict(record.get("gtneiInfo") or {})
+    flat.update((key, value) for key, value in record.items() if key != "gtneiInfo")
+    return flat
+
+
+def do_dimensions(debug: bool):
+    """gtnhdimension.json -> gtnhdimension/0.json（整合包维度与星系参数）。
+
+    兼容两种 Dumper 输出：新版 {"dimensions": [...]}（GTNEI 字段在 gtneiInfo 内）和旧版
+    {"abbreviatedName": [...]}。发布时统一为线上 Lua 读取的平铺结构 {"abbreviatedName": [...]}。
+    只有 GTNH 处理；附属模组和缺少输入时跳过。
+    """
+    print("=" * 50)
+    print("[Dimensions]")
+    print("=" * 50)
+    if local_mod_name() != "GTNH":
+        print("  跳过维度：只属于 GTNH 整合包")
+        return
+    path = Path(DUMPS_DIR) / "gtnhdimension.json"
+    if not path.is_file() or not path.stat().st_size:
+        print(f"  跳过缺失或空的维度输入: {path}")
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    records = data.get("dimensions")
+    if records is None:
+        records = data.get(DIMENSION_ARRAY)
+    if not isinstance(records, list):
+        raise ValueError(f"无法识别的维度导出结构: {sorted(data)}")
+    rows = [flatten_dimension(record) for record in records]
+    output = Path(VERSION) / "gtnhdimension"
+    written = write_array_pages(rows, {}, DIMENSION_ARRAY, output, HARD_MAX_BYTES)
+    if not debug:
+        clear_generated_pages(output, {".json"}, keep=written)
+    galactic = sum(1 for row in rows if row.get("galacticSpaceInfo"))
+    print(f"  {len(rows):,} dimensions ({galactic} with galacticSpaceInfo) -> {len(written)} file(s)")
+
+
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
 # 页内数组字段名是线上 Lua 做 $unwind 时使用的名字，改动会破坏查询，需与 Lua 同步。
 # 魔导手册的贴图不由本工具处理，已一次性上传到 File:Thaumonomicon-Asset-*，命名规则见 README。
@@ -1945,6 +1991,7 @@ TASKS = {
     "ticmaterial":("TicMaterial",  do_ticmaterial),
     "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
     "quests":     ("Quests",       do_quests),
+    "dimensions": ("Dimensions",   do_dimensions),
 }
 
 STANDALONE_TASKS = {
