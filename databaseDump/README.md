@@ -203,6 +203,8 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 成就与奖杯带 `items`（关联物品，写法同物品表的 `key`；带 NBT 的图标与奖杯本身是短 key）：成就取图标与条件中的物品（`inventory.add`、`item.use.finish`）；
 奖杯取奖杯方块本身、物品模型展示的物品、奖杯自身条件中的物品（少数奖杯不经成就直接颁发，如冰淇淋冠军奖杯），加上授予它的成就的物品（方块拼成的结构模型不算）。物品表据此写 `achievements`、`trophies` 字段。
 原版与其他模组的成就由代码触发，只有图标可作关联，所以这类关联只表示“图标是这个物品”。
+条件只写 `id` 与 `meta`、而物品表中该 rawKey 只有一个带 NBT 的变体时（如历代星门成就要求的任务用纸 `minecraft:paper:1–5`），
+成就与奖杯另带 `conditionItem`（该变体的 key），线上显示条件物品时优先使用。
 
 ## 实体（Entities）
 

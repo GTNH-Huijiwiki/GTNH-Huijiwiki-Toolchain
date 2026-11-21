@@ -963,6 +963,22 @@ def trophy_item_keys(trophy, achievements_by_id) -> list:
     return list(dict.fromkeys(key for key in keys if key))
 
 
+def resolve_condition_items(records, variants_by_raw) -> int:
+    """条件物品在物品表中没有精确 key、而同一 rawKey 只有一个变体时，写入 conditionItem（该变体的 key）。
+
+    例如历代星门成就要求物品栏中得到 minecraft:paper:1–5，实际是任务奖励的带显示名 NBT 的纸，
+    物品表里只有带 NBT 的那一种。variants_by_raw[rawKey] = [物品 key…]。返回写入数。
+    """
+    count = 0
+    for record in records:
+        key = _condition_item_key(record.get("condition"))
+        variants = variants_by_raw.get(key) if key else None
+        if variants and key not in variants and len(variants) == 1:
+            record["conditionItem"] = variants[0]
+            count += 1
+    return count
+
+
 def prepare_achievements(data):
     """achievements.json → (成就记录, 奖杯记录)；给二者加 items，给奖杯加授予它的成就 ID。"""
     achievements = data.get("achievements", [])
@@ -1840,6 +1856,13 @@ def do_achievements(debug: bool):
         print(f"  跳过缺失或空的成就输入: {Path(DUMPS_DIR) / 'achievements.json'}")
         return
     achievements, trophies = loaded
+    panel = Path(DUMPS_DIR) / "advitempanel.json"
+    if panel.is_file():
+        variants_by_raw = defaultdict(list)
+        for item in json.loads(panel.read_text(encoding="utf-8")).get("shortKey", []):
+            variants_by_raw[item.get("key")].append(item.get("shortKey"))
+        resolved = resolve_condition_items(achievements + trophies, variants_by_raw)
+        print(f"  {resolved} 个条件物品改用物品表中唯一的 NBT 变体")
     pages = json.loads((Path(DUMPS_DIR) / "achievements.json").read_text(encoding="utf-8")).get("pages", [])
     root = Path(VERSION) / "Achievements"
     output = root / "List"

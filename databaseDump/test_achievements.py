@@ -1,6 +1,6 @@
 import unittest
 
-from split_all import attach_record_links, biome_tags, ids_by_item, prepare_achievements
+from split_all import attach_record_links, biome_tags, ids_by_item, prepare_achievements, resolve_condition_items
 
 
 class AchievementLinkTest(unittest.TestCase):
@@ -60,6 +60,19 @@ class AchievementLinkTest(unittest.TestCase):
         attach_record_links(items, "trophies", ids_by_item(trophies))
         self.assertEqual(items[1]["trophies"], ["portal"])
         self.assertEqual(items[6]["trophies"], ["terrasteel_ingot"])
+
+
+class ConditionItemTest(unittest.TestCase):
+    def test_single_nbt_variant_is_used(self):
+        records = [{"id": "gate", "condition": {"type": "inventory.add", "item": "minecraft:paper", "meta": 4}},
+                   {"id": "plain", "condition": {"type": "inventory.add", "item": "minecraft:stone"}},
+                   {"id": "many", "condition": {"type": "inventory.add", "item": "mod:tool"}}]
+        variants = {"minecraft:paper:4": ["minecraft:paper:4_HASH"], "minecraft:stone": ["minecraft:stone"],
+                    "mod:tool": ["mod:tool_a", "mod:tool_b"]}
+        self.assertEqual(resolve_condition_items(records, variants), 1)
+        self.assertEqual(records[0]["conditionItem"], "minecraft:paper:4_HASH")
+        self.assertNotIn("conditionItem", records[1])
+        self.assertNotIn("conditionItem", records[2])
 
 
 class BiomeTagsTest(unittest.TestCase):
