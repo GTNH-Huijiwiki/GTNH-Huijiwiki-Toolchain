@@ -404,6 +404,21 @@ def _fix_aspectrecipeindex_keys(items: list):
         print(f"  [AspectRecipeIndex] Fixed {fixed} keys (NBT hash → originalName)")
 
 
+def _quest_item_keys() -> set:
+    """Dumper 的 betterquesting/itemKeys.json 中出现的全部物品 key；没有该文件时为空。"""
+    path = Path(DUMPS_DIR) / "betterquesting" / "itemKeys.json"
+    if not path.is_file():
+        return set()
+    keys = set()
+    for entry in json.loads(path.read_text(encoding="utf-8")).values():
+        keys.add(entry.get("icon"))
+        for kind in ("tasks", "rewards"):
+            for values in (entry.get(kind) or {}).values():
+                keys.update(values)
+    keys.discard(None)
+    return keys
+
+
 def _regress_nbt_only_items(items: list):
     """退行机制：对于 rawKey 唯一的 item（只有一个 NBT 变体），
     如果其 key（带 NBT 后缀）从未在 recipe 中出现过，则退行 key → rawKey。
@@ -430,10 +445,12 @@ def _regress_nbt_only_items(items: list):
     # Step 1: 找出所有 rawKey 唯一的 NBT 单例，采集待检查的 key
     nbt_keys_to_check = {}   # key → index in items
     raw_key_counts = Counter(item.get("rawKey", "") for item in items)
+    # 任务书引用的 NBT 变体（改名的奖励等）不退行，任务页要按这个 key 显示它。
+    quest_keys = _quest_item_keys()
     for i, item in enumerate(items):
         rk = item.get("rawKey", "")
         k = item.get("key", "")
-        if raw_key_counts[rk] == 1 and k and rk and k != rk:
+        if raw_key_counts[rk] == 1 and k and rk and k != rk and k not in quest_keys:
             nbt_keys_to_check[k] = i
 
     if not nbt_keys_to_check:
@@ -643,6 +660,9 @@ def _merge_fluid_data(items: list, fluid_map: dict):
         fluid = fluid_map.get(item_key)
         if fluid is None:
             continue
+        # 带 NBT 的流体展示物品（任务书里的）是另一个变体，不并成流体，否则与流体本身同 key。
+        if item.get("shortKey", item_key) != item_key:
+            continue
 
         fluid_key = fluid.get("key", "")
         # 改写 shortKey 和 key
@@ -814,17 +834,29 @@ def research_candidates(key: str) -> list:
     return [base, base + ":0", base + ":32767"]
 
 
-def quest_ids_by_item(quests) -> dict:
-    """堆栈 key（id 加非零 :Damage，流体为 fluid.名称）→ 任务 ID 列表。
+# 不限定 NBT 的任务要求（忽略 NBT，或要求本身不带 NBT）匹配到的变体超过此数时，只关联不带 NBT 的基础物品：
+# 例如“任意一个量筒”能接受 1,488 种装了流体的量筒，挂到每一种上没有意义。
+GENERIC_MATCH_LIMIT = 16
 
-    命中位置：任务图标、任务要求的物品与流体、奖励与可选奖励。
+
+def quest_ids_by_item(quests, item_keys=None) -> dict:
+    """物品 key（流体为 fluid.名称）→ 任务 ID 列表。
+
+    关联按 BetterQuesting 的匹配规则，不再把一个堆栈挂到同一 id:Damage 的全部 NBT 变体上：
+    - 图标、奖励：只关联这个堆栈本身——Dumper 在 itemKeys.json 中给出的精确 key，没有时为 id 加非零 :Damage。
+    - 任务要求：itemKeys.json 的 taskMatches 列出任务实际接受的物品（BQ 的 StackMatch，按任务的 ignoreNBT /
+      partialMatch）。要求带 NBT 且不忽略 NBT 时全部关联；否则匹配不超过 GENERIC_MATCH_LIMIT 个时全部关联，
+      超过时只关联基础物品。旧导出没有 taskMatches 时只关联 id:Damage 本身。
+    - 流体要求：fluid.名称。
     """
+    item_keys = item_keys or {}
+
     def values(container):
         if isinstance(container, dict):
             return list(container.values())
         return container if isinstance(container, list) else []
 
-    def stack_key(stack):
+    def plain_key(stack):
         if not isinstance(stack, dict):
             return None
         if isinstance(stack.get("FluidName"), str):
@@ -834,16 +866,41 @@ def quest_ids_by_item(quests) -> dict:
             return stack["id"] + (f":{damage}" if damage else "")
         return None
 
+    def exact(stack, key):
+        return key if isinstance(key, str) else plain_key(stack)
+
     index = defaultdict(list)
     for quest in quests:
-        stacks = [quest.get("properties", {}).get("betterquesting", {}).get("icon")]
+        entry = item_keys.get(quest["questID"]) or {}
+        keys = []
+        keys.append(exact(quest.get("properties", {}).get("betterquesting", {}).get("icon"), entry.get("icon")))
         for task in values(quest.get("tasks")):
-            if isinstance(task, dict):
-                stacks += values(task.get("requiredItems")) + values(task.get("requiredFluids"))
+            if not isinstance(task, dict):
+                continue
+            slot = str(task.get("index"))
+            matches = (entry.get("taskMatches") or {}).get(slot)
+            specific_task = not int(task.get("ignoreNBT") or 0)
+            task_keys = (entry.get("tasks") or {}).get(slot) or []
+            for position, stack in enumerate(values(task.get("requiredItems"))):
+                plain = plain_key(stack)
+                accepted = matches[position] if isinstance(matches, list) and position < len(matches) else None
+                if not isinstance(accepted, list):
+                    keys.append(exact(stack, task_keys[position] if position < len(task_keys) else None))
+                elif specific_task and isinstance(stack, dict) and stack.get("tag"):
+                    keys += accepted
+                elif len(accepted) <= GENERIC_MATCH_LIMIT:
+                    keys += accepted
+                elif plain in accepted:
+                    keys.append(plain)
+            keys += [plain_key(stack) for stack in values(task.get("requiredFluids"))]
         for reward in values(quest.get("rewards")):
-            if isinstance(reward, dict):
-                stacks += values(reward.get("rewards")) + values(reward.get("choices"))
-        for key in dict.fromkeys(filter(None, map(stack_key, stacks))):
+            if not isinstance(reward, dict):
+                continue
+            exact_keys = (entry.get("rewards") or {}).get(str(reward.get("index"))) or []
+            stacks = values(reward.get("rewards")) + values(reward.get("choices"))
+            for position, stack in enumerate(stacks):
+                keys.append(exact(stack, exact_keys[position] if position < len(exact_keys) else None))
+        for key in dict.fromkeys(filter(None, keys)):
             index[key].append(quest["questID"])
     return index
 
@@ -851,13 +908,17 @@ def quest_ids_by_item(quests) -> dict:
 def attach_item_links(items, research_index, quest_index):
     """给物品加 researchKeys / questIds（无关联则不加）；返回 (带研究的物品数, 带任务的物品数)。
 
-    研究用 key 与 rawKey 的候选写法匹配；任务用 rawKey（缺省为 key）精确匹配，与条目页查询相同。
+    研究用 key 与 rawKey 的候选写法匹配。任务按 quest_ids_by_item 给出的精确 key 匹配物品自己的 key 或 shortKey
+    （NBT 退行会改写 key），合并成流体的展示物品另按 rawKey 匹配；带 NBT 的变体不再因 rawKey 相同而被关联。
     """
     with_research = with_quests = 0
     for item in items:
         keys = [k for k in (item.get("key"), item.get("rawKey")) if k]
         research = list(dict.fromkeys(r for k in keys for c in research_candidates(k) for r in research_index.get(c, ())))
-        quests = sorted(set(quest_index.get(item.get("rawKey") or item.get("key"), ())))
+        own = {item.get("key"), item.get("shortKey")}
+        if str(item.get("key", "")).startswith("fluid.") and not item.get("nbt"):
+            own.add(item.get("rawKey"))  # 流体展示物品合并后 key 是 fluid.名称，任务里仍写展示物品
+        quests = sorted({quest for key in own if key for quest in quest_index.get(key, ())})
         for field, values in (("researchKeys", research), ("questIds", quests)):
             if values:
                 item[field] = values
@@ -886,14 +947,16 @@ def achievement_item_keys(achievement) -> list:
 
 
 def trophy_item_keys(trophy, achievements_by_id) -> list:
-    """奖杯关联的物品：奖杯本身、物品模型展示的物品，以及授予它的成就关联的物品。
+    """奖杯关联的物品：奖杯本身、物品模型展示的物品、奖杯自身条件中的物品，以及授予它的成就关联的物品。
 
+    少数奖杯不经成就、直接由条件颁发（如冰淇淋冠军奖杯：吃完某物品）。
     结构模型（complex）只是方块拼出的造型，不算关联物品。
     """
     model = trophy.get("model") or {}
     keys = [trophy.get("item")]  # 奖杯方块本身
     if model.get("type") == "item":
         keys.append(_condition_item_key(model))
+    keys.append(_condition_item_key(trophy.get("condition")))
     achievement = achievements_by_id.get(trophy.get("achievement"))
     if achievement:
         keys += achievement.get("items", [])
@@ -970,7 +1033,9 @@ def _attach_item_links(items):
         from quests import build_records, read_lang
         lang = source / "lang/zh_CN.lang"
         _, quests, _, _ = build_records(source / "DefaultQuests", read_lang(lang) if lang.is_file() else {})
-        quest_index = quest_ids_by_item(quests)
+        keys_file = source / "itemKeys.json"
+        item_keys = json.loads(keys_file.read_text(encoding="utf-8")) if keys_file.is_file() else None
+        quest_index = quest_ids_by_item(quests, item_keys)
     loaded = _load_achievements()
     if not research_index and not quest_index and not loaded:
         print("  [Links] 跳过：缺少魔导手册、任务书与成就输入")
@@ -1787,6 +1852,35 @@ def do_achievements(debug: bool):
           f"{len(trophies)} trophies")
 
 
+def do_entities(debug: bool):
+    """entities.json -> Entities/List/N.json（EntityList 中注册的全部实体）。
+
+    每条记录以 EntityList 注册名 id 为键（与刷怪表、刷怪笼、任务击杀要求一致），带游戏内名称、来源模组、
+    类别、基础属性，以及 MobsInfo 的精英怪、灵魂瓶、生成来源与掉落，Ender IO 电动刷怪笼设置。
+    群系刷怪表只存实体 id，线上按 id 查本表。只有 GTNH 处理。
+    """
+    print("=" * 50)
+    print("[Entities]")
+    print("=" * 50)
+    if local_mod_name() != "GTNH":
+        print("  跳过实体：只属于 GTNH 整合包")
+        return
+    source = Path(DUMPS_DIR) / "entities.json"
+    if not source.is_file():
+        print(f"  跳过缺失的实体输入: {source}")
+        return
+    entities = json.loads(source.read_text(encoding="utf-8")).get("entities", [])
+    if not entities:
+        print(f"  跳过空的实体输入: {source}")
+        return
+    output = Path(VERSION) / "Entities" / "List"
+    written = write_array_pages(entities, {}, "entities", output, HARD_MAX_BYTES)
+    if not debug:
+        clear_generated_pages(output, {".json"}, keep=written)
+    living = sum(1 for entity in entities if "health" in entity)
+    print(f"  {len(entities):,} entities ({living:,} living) -> {len(written)} file(s)")
+
+
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
 # 页内数组字段名是线上 Lua 做 $unwind 时使用的名字，改动会破坏查询，需与 Lua 同步。
 # 魔导手册的贴图不由本工具处理，已一次性上传到 File:Thaumonomicon-Asset-*，命名规则见 README。
@@ -1869,7 +1963,25 @@ def do_quests(debug: bool):
     if not (source / "DefaultQuests").is_dir() or not (source / "lang/zh_CN.lang").is_file():
         print(f"跳过缺失的任务书输入: {source}")
         return
-    result = export_quests(source / "DefaultQuests", source / "lang/zh_CN.lang", Path(VERSION), dry_run=debug)
+    # Dumper 记录的任务物品 key（带 NBT 的奖励等），旧导出没有时照旧只用 id:Damage。
+    keys_file = source / "itemKeys.json"
+    item_keys = json.loads(keys_file.read_text(encoding="utf-8")) if keys_file.is_file() else None
+    panel = Path(DUMPS_DIR) / "advitempanel.json"
+    if item_keys and panel.is_file():
+        # 少数物品的 NBT 在扫描后仍会被游戏改写，key 对不上物品表；只保留物品表中有的 key，其余照旧显示基础物品。
+        known = {item.get("shortKey") for item in json.loads(panel.read_text(encoding="utf-8")).get("shortKey", [])}
+        dropped = 0
+        for entry in item_keys.values():
+            for kind in ("tasks", "rewards"):
+                for index, keys in (entry.get(kind) or {}).items():
+                    kept = [key if key in known else None for key in keys]
+                    dropped += sum(1 for old, new in zip(keys, kept) if old and not new)
+                    entry[kind][index] = kept
+            if entry.get("icon") not in known:
+                entry["icon"] = None
+        print(f"  [Quests] {dropped} 个任务物品 key 不在物品表中，改用 id:Damage")
+    result = export_quests(source / "DefaultQuests", source / "lang/zh_CN.lang", Path(VERSION), dry_run=debug,
+                           item_keys=item_keys)
     print(f"  [Quests] {result['questLines']} quest lines, {result['quests']} quests -> "
           f"QuestLines {result['pages']['QuestLines']} / Quests {result['pages']['Quests']} file(s)")
     if result["missing"]:
@@ -2292,6 +2404,7 @@ TASKS = {
     "dimensions": ("Dimensions",   do_dimensions),
     "biomes":     ("Biomes",       do_biomes),
     "achievements": ("Achievements", do_achievements),
+    "entities":   ("Entities",     do_entities),
 }
 
 STANDALONE_TASKS = {
