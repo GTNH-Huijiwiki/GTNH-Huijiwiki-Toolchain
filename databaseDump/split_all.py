@@ -868,6 +868,96 @@ def attach_item_links(items, research_index, quest_index):
     return with_research, with_quests
 
 
+def _condition_item_key(definition):
+    """Amazing Trophies 的物品写法 {item|registryName, meta} → 物品 key（meta 为 0 或缺省时不带）。"""
+    if not isinstance(definition, dict):
+        return None
+    name = definition.get("item") or definition.get("registryName")
+    if not isinstance(name, str) or not name:
+        return None
+    meta = int(definition.get("meta") or 0)
+    return name + (f":{meta}" if meta else "")
+
+
+def achievement_item_keys(achievement) -> list:
+    """成就关联的物品：图标与 Amazing Trophies 条件中的物品（拿到、用完某物品）。"""
+    keys = [achievement.get("icon"), _condition_item_key(achievement.get("condition"))]
+    return list(dict.fromkeys(key for key in keys if isinstance(key, str) and key))
+
+
+def trophy_item_keys(trophy, achievements_by_id) -> list:
+    """奖杯关联的物品：奖杯本身、物品模型展示的物品，以及授予它的成就关联的物品。
+
+    结构模型（complex）只是方块拼出的造型，不算关联物品。
+    """
+    model = trophy.get("model") or {}
+    keys = [trophy.get("item")]  # 奖杯方块本身
+    if model.get("type") == "item":
+        keys.append(_condition_item_key(model))
+    achievement = achievements_by_id.get(trophy.get("achievement"))
+    if achievement:
+        keys += achievement.get("items", [])
+    return list(dict.fromkeys(key for key in keys if key))
+
+
+def prepare_achievements(data):
+    """achievements.json → (成就记录, 奖杯记录)；给二者加 items，给奖杯加授予它的成就 ID。"""
+    achievements = data.get("achievements", [])
+    for achievement in achievements:
+        items = achievement_item_keys(achievement)
+        if items:
+            achievement["items"] = items
+    by_id = {achievement["id"]: achievement for achievement in achievements}
+    trophies = data.get("trophies", [])
+    for trophy in trophies:
+        condition = trophy.get("condition") or {}
+        if condition.get("type") == "achievement" and condition.get("id"):
+            # Amazing Trophies 自己的成就 ID 不带 achievement. 前缀，原版与其他模组的带。
+            cid = condition["id"]
+            trophy["achievement"] = cid if cid in by_id else "achievement." + cid
+        items = trophy_item_keys(trophy, by_id)
+        if items:
+            trophy["items"] = items
+    return achievements, trophies
+
+
+def ids_by_item(records, id_field="id") -> dict:
+    index = defaultdict(list)
+    for record in records:
+        for key in record.get("items", []):
+            index[key].append(record[id_field])
+    return index
+
+
+def attach_record_links(items, field, index) -> int:
+    """记录的 items 是物品表的 key（带 NBT 的物品为短 key）或不带 NBT 的 key。
+
+    物品按 key 精确匹配；不带 NBT 的写法还匹配同一 rawKey 的 NBT 变体与通配 meta 32767。返回带该字段的物品数。
+    """
+    count = 0
+    for item in items:
+        raw = item.get("rawKey") or item.get("key")
+        if not raw:
+            continue
+        base, sep, meta = raw.rpartition(":")
+        wildcard = (base if sep and meta.isdigit() else raw) + ":32767"
+        keys = dict.fromkeys(k for k in (item.get("key"), raw, wildcard) if k)
+        values = list(dict.fromkeys(v for k in keys for v in index.get(k, ())))
+        if values:
+            item[field] = values
+            count += 1
+        else:
+            item.pop(field, None)
+    return count
+
+
+def _load_achievements():
+    path = Path(DUMPS_DIR) / "achievements.json"
+    if not path.is_file() or not path.stat().st_size:
+        return None
+    return prepare_achievements(json.loads(path.read_text(encoding="utf-8")))
+
+
 def _attach_item_links(items):
     if local_mod_name() != "GTNH":
         return
@@ -881,11 +971,17 @@ def _attach_item_links(items):
         lang = source / "lang/zh_CN.lang"
         _, quests, _, _ = build_records(source / "DefaultQuests", read_lang(lang) if lang.is_file() else {})
         quest_index = quest_ids_by_item(quests)
-    if not research_index and not quest_index:
-        print("  [Links] 跳过：缺少魔导手册与任务书输入")
+    loaded = _load_achievements()
+    if not research_index and not quest_index and not loaded:
+        print("  [Links] 跳过：缺少魔导手册、任务书与成就输入")
         return
     with_research, with_quests = attach_item_links(items, research_index, quest_index)
     print(f"  [Links] {with_research:,} items carry researchKeys; {with_quests:,} carry questIds")
+    if loaded:
+        achievements, trophies = loaded
+        with_achievements = attach_record_links(items, "achievements", ids_by_item(achievements))
+        with_trophies = attach_record_links(items, "trophies", ids_by_item(trophies))
+        print(f"  [Links] {with_achievements:,} items carry achievements; {with_trophies:,} carry trophies")
 
 
 def _attach_ore_dictionaries(items):
@@ -1611,8 +1707,20 @@ def localize_biomes(biomes, names) -> list:
     return missing
 
 
+def biome_tags(biomes, names) -> dict:
+    """标签页：BiomeDictionary 标签、林业温度与湿度各自的中文名和群系数，按游戏中的名字排序。"""
+    def table(field, translations):
+        counts = Counter(value for biome in biomes for value in
+                         (biome.get(field) if isinstance(biome.get(field), list) else [biome.get(field)]) if value)
+        return [{"id": key, "zh": translations.get(key), "count": counts[key]} for key in sorted(counts)]
+    return {"types": table("types", names["types"]),
+            "forestryTemperature": table("forestryTemperature", names["forestryTemperature"]),
+            "forestryHumidity": table("forestryHumidity", names["forestryHumidity"])}
+
+
 def do_biomes(debug: bool):
-    """biomes.json -> Biomes/N.json（群系）与 BiomeBooks/0.json（巫术的两本生态之书）。
+    """biomes.json -> Biomes/List/N.json（群系）、Biomes/Books/0.json（巫术的两本生态之书）、
+    Biomes/Tags/0.json（BiomeDictionary 标签与林业气候的中文及群系数）。
 
     群系记录保留 Dumper 的全部字段（温湿度、降水与降雪、高度、方块、BiomeDictionary 标签、林业气候、
     IC2 作物加成、刷怪表、生态之书扩展版页码），另补中文名与标签、气候的中文（config/biome_names.json）。
@@ -1629,19 +1737,54 @@ def do_biomes(debug: bool):
         print(f"  跳过缺失或空的群系输入: {path}")
         return
     data = json.loads(path.read_text(encoding="utf-8"))
-    biomes = data["biomes"]
-    missing = localize_biomes(biomes, json.loads(BIOME_NAMES_CONFIG.read_text(encoding="utf-8")))
-    output = Path(VERSION) / "Biomes"
+    # 同一群系对象可能占群系数组的多个槽位（如 ID 160），按 ID 只保留第一条，旧版 Dumper 的导出也适用。
+    seen_ids = set()
+    biomes = [biome for biome in data["biomes"] if not (biome["id"] in seen_ids or seen_ids.add(biome["id"]))]
+    names = json.loads(BIOME_NAMES_CONFIG.read_text(encoding="utf-8"))
+    missing = localize_biomes(biomes, names)
+    root = Path(VERSION) / "Biomes"
+    output = root / "List"
     written = write_array_pages(biomes, {}, "biomes", output, HARD_MAX_BYTES)
     if not debug:
         clear_generated_pages(output, {".json"}, keep=written)
     books = {key: data[key] for key in ("bookOfBiomes", "bookOfBiomesExtended") if key in data}
     if books:
-        write_bounded(Path(VERSION) / "BiomeBooks" / "0.json", encode_json(books), HARD_MAX_BYTES)
+        write_bounded(root / "Books" / "0.json", encode_json(books), HARD_MAX_BYTES)
+    write_bounded(root / "Tags" / "0.json", encode_json(biome_tags(biomes, names)), HARD_MAX_BYTES)
     extended = len(books.get("bookOfBiomesExtended", {}).get("pages", []))
     print(f"  {len(biomes):,} biomes -> {len(written)} file(s); book pages: {extended}")
     if missing:
         print(f"  {len(missing)} 个群系没有中文名（补到 config/biome_names.json）: {', '.join(missing[:20])}")
+
+
+def do_achievements(debug: bool):
+    """achievements.json -> Achievements/List/N.json（成就）、Achievements/Pages/0.json（成就页顺序）、
+    Achievements/Trophies/0.json（Amazing Trophies 的奖杯）。
+
+    成就与奖杯带 items（关联物品 key）；奖杯带授予它的成就 ID achievement。物品表的 achievements / trophies
+    字段用同一套关联（见 _attach_item_links）。只有 GTNH 处理。
+    """
+    print("=" * 50)
+    print("[Achievements]")
+    print("=" * 50)
+    if local_mod_name() != "GTNH":
+        print("  跳过成就：只属于 GTNH 整合包")
+        return
+    loaded = _load_achievements()
+    if loaded is None:
+        print(f"  跳过缺失或空的成就输入: {Path(DUMPS_DIR) / 'achievements.json'}")
+        return
+    achievements, trophies = loaded
+    pages = json.loads((Path(DUMPS_DIR) / "achievements.json").read_text(encoding="utf-8")).get("pages", [])
+    root = Path(VERSION) / "Achievements"
+    output = root / "List"
+    written = write_array_pages(achievements, {}, "achievements", output, HARD_MAX_BYTES)
+    if not debug:
+        clear_generated_pages(output, {".json"}, keep=written)
+    write_bounded(root / "Pages" / "0.json", encode_json({"pages": pages}), HARD_MAX_BYTES)
+    write_bounded(root / "Trophies" / "0.json", encode_json({"trophies": trophies}), HARD_MAX_BYTES)
+    print(f"  {len(achievements):,} achievements on {len(pages)} pages -> {len(written)} file(s); "
+          f"{len(trophies)} trophies")
 
 
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
@@ -1713,7 +1856,7 @@ def do_thaumonomicon(debug: bool):
 
 
 def do_quests(debug: bool):
-    """dumps/betterquesting -> QuestLines/N.json、Quests/N.json（任务书，整合包整体所有）。
+    """dumps/betterquesting -> Questbook/QuestLines/N.json、Questbook/Quests/N.json（任务书，整合包整体所有）。
 
     输入是 GTNH-Dumper 复制的 DefaultQuests 与 lang/zh_CN.lang；整理规则见 quests.py 与 README。
     只有 GTNH 处理；附属模组和缺少输入时跳过。
@@ -2145,9 +2288,10 @@ TASKS = {
     "gtmaterial": ("GtMaterial",   do_gtmaterial),
     "ticmaterial":("TicMaterial",  do_ticmaterial),
     "thaumonomicon":("Thaumonomicon", do_thaumonomicon),
-    "quests":     ("Quests",       do_quests),
+    "quests":     ("Questbook",    do_quests),
     "dimensions": ("Dimensions",   do_dimensions),
     "biomes":     ("Biomes",       do_biomes),
+    "achievements": ("Achievements", do_achievements),
 }
 
 STANDALONE_TASKS = {

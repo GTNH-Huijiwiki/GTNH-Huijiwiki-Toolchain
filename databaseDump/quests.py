@@ -200,9 +200,10 @@ def export_quests(source, lang, destination, *, max_bytes=DEFAULT_MAX_BYTES,
         "Quests": list(pretty_array_pages(quests, "quests", max_bytes)),
     }
     destination = destination.resolve()
+    root = destination / "Questbook"
     stale = []
     for category, content in pages.items():
-        folder = destination / category
+        folder = root / category
         if not folder.resolve().is_relative_to(destination):
             raise ValueError(f"输出目录越出目标版本目录: {folder}")
         for path in folder.glob("*.json"):
@@ -213,7 +214,7 @@ def export_quests(source, lang, destination, *, max_bytes=DEFAULT_MAX_BYTES,
                     stale.append(path)
     if not dry_run:
         for category, content in pages.items():
-            folder = destination / category
+            folder = root / category
             folder.mkdir(parents=True, exist_ok=True)
             for index, data in enumerate(content):
                 path = folder / f"{index}.json"

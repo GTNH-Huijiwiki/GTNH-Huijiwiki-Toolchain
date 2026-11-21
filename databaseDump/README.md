@@ -84,9 +84,9 @@ python data_upload.py --only Thaumonomicon gtnhdimension           # 只上传�
 ```
 
 `--only` 后面跟版本目录下的第一级目录名（`Items`、`ItemNames`、`Recipes`、`OreDictionary`、`Ores`、`Aspects`、`Gtmaterial`、
-`Ticmaterial`、`Thaumonomicon`、`Quests`、`QuestLines`、`gtnhdimension`），直到下一个 `-` 开头的参数为止。
+`Ticmaterial`、`Thaumonomicon`、`Questbook`、`Biomes`、`Achievements`、`gtnhdimension`），直到下一个 `-` 开头的参数为止。
 上传和删除都只限这些目录；版本配置模块仍要等整个版本的数据页都上传完才发布。
-拆分任务与目录的对应：`thaumonomicon` → `Thaumonomicon`，`dimensions` → `gtnhdimension`，`quests` → `Quests`、`QuestLines`，
+拆分任务与目录的对应：`thaumonomicon` → `Thaumonomicon`，`dimensions` → `gtnhdimension`，`quests` → `Questbook`，`biomes` → `Biomes`，`achievements` → `Achievements`，
 `ticmaterial` → `Ticmaterial`，`gtmaterial` → `Gtmaterial`、`Ores`；`items` 还会刷新 `ItemNames`、`Aspects`。
 Dumper 端可用自动导出的 `tasks` 只导出对应数据（见 GTNH-Dumper README“只导出部分数据”）。
 
@@ -182,21 +182,36 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 
 | 目录 | 内容 |
 |---|---|
-| `Biomes/N.json` | 数组 `biomes`，每个已注册群系一条：ID、英文名、类、温度、降水、高湿度、降雪、降雨、打雷、根高度、高度变化、颜色、地表与填充方块、BiomeDictionary 标签、林业气候、IC2 作物加成、各类生物的刷怪表（实体、权重、群组大小）、生态之书扩展版页码 |
-| `BiomeBooks/0.json` | 巫术的两本书：`bookOfBiomes`（季节变迁仪式指南，每类群系一页）与 `bookOfBiomesExtended`（每个群系一页，含游戏内显示的降雨、温度、降雪、打雷四行，中英文各一份，以及分节） |
+| `Biomes/List/N.json` | 数组 `biomes`，每个已注册群系一条：ID、英文名、类、温度、降水、高湿度、降雪、降雨、打雷、根高度、高度变化、颜色、地表与填充方块、BiomeDictionary 标签、林业气候、IC2 作物加成、各类生物的刷怪表（实体、权重、群组大小）、生态之书扩展版页码 |
+| `Biomes/Books/0.json` | 巫术的两本书：`bookOfBiomes`（季节变迁仪式指南，每类群系一页）与 `bookOfBiomesExtended`（每个群系一页，含游戏内显示的降雨、温度、降雪、打雷四行，中英文各一份，以及分节） |
+| `Biomes/Tags/0.json` | `types`（BiomeDictionary 标签）、`forestryTemperature`、`forestryHumidity` 三张表，每项 `{id, zh, count}`：游戏中的名字、中文名（配置中没有则为 null）与群系数 |
 
 游戏里没有群系名、标签和林业气候的中文，拆分时从 `config/biome_names.json` 补 `nameZh`、`typesZh`、
 `forestryTemperatureZh`、`forestryHumidityZh`。群系按 ID → 英文名加书页码 → 唯一的英文名匹配；缺中文名的会列出来，补进配置即可。
-这份配置最初取自人工整理的 `Data:生物群系.json`（线上 `模块:生态之书群系表`、`模块:生物群系表`、`模块:蜜蜂` 目前仍读那份旧数据）。
+这份配置最初取自人工整理的 `Data:生物群系.json`（已由本目录的数据取代）。
 
-## 任务书（Quests）
+## 成就与奖杯（Achievements）
 
-`python split_all.py quests` 把任务书拆成两个目录，默认任务包含它：
+`python split_all.py achievements` 读 GTNH-Dumper 的 `achievements.json`，默认任务包含它，只有 `MOD_LOCAL_NAME=GTNH` 处理：
+
+| 目录 | 内容 |
+|---|---|
+| `Achievements/List/N.json` | 数组 `achievements`，每个已注册成就一条：`id`（统计 ID，如 `achievement.portal`）、中英文名称与描述、所在成就页 `page`、坐标、前置 `parent`、`special`、图标 `icon`；Amazing Trophies 定义的成就另有 `source` 与条件 `condition` |
+| `Achievements/Pages/0.json` | `pages`：成就界面翻页的顺序，原版页 `Minecraft` 在前 |
+| `Achievements/Trophies/0.json` | 数组 `trophies`：Amazing Trophies 的奖杯，含中英文名、获得条件 `condition`、模型 `model`，以及授予它的成就 `achievement` |
+
+成就与奖杯带 `items`（关联物品，写法同物品表的 `key`；带 NBT 的图标与奖杯本身是短 key）：成就取图标与条件中的物品（`inventory.add`、`item.use.finish`）；
+奖杯取奖杯方块本身、物品模型展示的物品，加上授予它的成就的物品（方块拼成的结构模型不算）。物品表据此写 `achievements`、`trophies` 字段。
+原版与其他模组的成就由代码触发，只有图标可作关联，所以这类关联只表示“图标是这个物品”。
+
+## 任务书（Questbook）
+
+`python split_all.py quests` 把任务书拆到 `Questbook/` 下的两个目录，默认任务包含它：
 
 ```text
 wikitext/Data/Versions/<远端模组名>/<版本>/
-  QuestLines/0.json, 1.json, ...
-  Quests/0.json, 1.json, ...
+  Questbook/QuestLines/0.json, 1.json, ...
+  Questbook/Quests/0.json, 1.json, ...
 ```
 
 输入来自 GTNH-Dumper 复制到 `dumps/betterquesting/` 的源文件（与其他数据同一次导出）：
@@ -425,7 +440,9 @@ Lua 查询一次读取命中名称桶的所有分页，使用 `$objectToArray` �
 研究——非虚拟、有分类的研究，以该物品为图标（没有贴图资源时）、物品扫描条件或页面（配方）产物；物品的 `key` 与 `rawKey`
 按 meta 规则扩展候选（非零 meta 匹配自身与 `:32767`，无 meta 或 `:0` 匹配 base、base:0、base:32767），见 模块:Thaumonomicon 的 related。
 任务——任务图标、要求的物品与流体、奖励与可选奖励中的堆栈（`id` 加非零 `:Damage`，流体 `fluid.名称`）与物品 `rawKey`（缺省为 `key`）
-精确相等，见 模块:Database/Quests。两者都只在 `MOD_LOCAL_NAME=GTNH` 时生成，输入为同一导出的 `tc4thaumonomicon.json` 与 `betterquesting/`。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
+精确相等，见 模块:Database/Quests。
+另有 `achievements`（成就 ID）与 `trophies`（奖杯 ID）：成就、奖杯的 `items` 与物品 `key` 相等即关联，不带 NBT 的写法还关联同一 `rawKey` 的 NBT 变体（另认 `:32767` 通配），
+规则见上文“成就与奖杯”。这些都只在 `MOD_LOCAL_NAME=GTNH` 时生成，输入为同一导出的 `tc4thaumonomicon.json`、`betterquesting/` 与 `achievements.json`。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
 同一桶超过大小限制时需要读取该桶的所有分块。
 
 ### 可选配方分桶
