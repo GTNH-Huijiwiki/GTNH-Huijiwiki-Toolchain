@@ -201,8 +201,15 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 | `Achievements/Trophies/0.json` | 数组 `trophies`：Amazing Trophies 的奖杯，含中英文名、获得条件 `condition`、模型 `model`，以及授予它的成就 `achievement` |
 
 成就与奖杯带 `items`（关联物品，写法同物品表的 `key`；带 NBT 的图标与奖杯本身是短 key）：成就取图标与条件中的物品（`inventory.add`、`item.use.finish`）；
-奖杯取奖杯方块本身、物品模型展示的物品，加上授予它的成就的物品（方块拼成的结构模型不算）。物品表据此写 `achievements`、`trophies` 字段。
+奖杯取奖杯方块本身、物品模型展示的物品、奖杯自身条件中的物品（少数奖杯不经成就直接颁发，如冰淇淋冠军奖杯），加上授予它的成就的物品（方块拼成的结构模型不算）。物品表据此写 `achievements`、`trophies` 字段。
 原版与其他模组的成就由代码触发，只有图标可作关联，所以这类关联只表示“图标是这个物品”。
+
+## 实体（Entities）
+
+`python split_all.py entities` 读 GTNH-Dumper 的 `entities.json`，写 `Entities/List/N.json`（数组 `entities`），默认任务包含它，
+只有 `MOD_LOCAL_NAME=GTNH` 处理。每条记录以 EntityList 注册名 `id` 为键，字段见 GTNH-Dumper README 的“实体”一节
+（名称、来源模组、类别、基础属性、MobsInfo 的精英怪/灵魂瓶/生成来源/掉落、Ender IO 电动刷怪笼）。
+群系刷怪表只存实体 `id`，线上（`模块:实体`）按 id 查名称，不在其他表里重复写名称。
 
 ## 任务书（Questbook）
 
@@ -232,6 +239,8 @@ wikitext/Data/Versions/<远端模组名>/<版本>/
   `betterquesting.quest.<ID>.name/desc` 或 `betterquesting.questline.<ID>.name/desc` 汉化。
   汉化字段中的 `%n` 转为真正换行；保留 `§` 格式码及 `[url]`、`[note]` 等任务书标签供展示端处理。
 - 任务保留 `preRequisites`、`tasks`、`rewards` 和全部属性，物品及其 NBT 不裁剪。
+- 有 Dumper 的 `itemKeys.json` 时，带 NBT 的物品堆栈（改名的奖励、任务用纸等）加 `key` 字段，即物品表中该变体的 key；
+  线上显示用它，按物品反查任务仍用 `id` 加 `:Damage`。
 - 任务线增加 `quests` 数组，包含 `questID`、`x`、`y`、`sizeX`、`sizeY` 等原布局字段；
   增加从 0 开始的 `order`，按 `QuestLinesOrder.txt` 顺序输出。
 - 同一个任务可出现在多条任务线中，任务正文只输出一次。
@@ -439,8 +448,11 @@ Lua 查询一次读取命中名称桶的所有分页，使用 `$objectToArray` �
 有关联的物品还带 `researchKeys`（魔导手册研究 Key）与 `questIds`（任务 ID），规则与线上条目页的查询相同，没有关联则不带：
 研究——非虚拟、有分类的研究，以该物品为图标（没有贴图资源时）、物品扫描条件或页面（配方）产物；物品的 `key` 与 `rawKey`
 按 meta 规则扩展候选（非零 meta 匹配自身与 `:32767`，无 meta 或 `:0` 匹配 base、base:0、base:32767），见 模块:Thaumonomicon 的 related。
-任务——任务图标、要求的物品与流体、奖励与可选奖励中的堆栈（`id` 加非零 `:Damage`，流体 `fluid.名称`）与物品 `rawKey`（缺省为 `key`）
-精确相等，见 模块:Database/Quests。
+任务——按 BetterQuesting 的匹配规则，不再把堆栈挂到同一 `id:Damage` 的全部 NBT 变体上（实现见 `quest_ids_by_item`）：
+图标与奖励只关联堆栈本身（`betterquesting/itemKeys.json` 给出的精确 key，没有时为 `id` 加非零 `:Damage`）；任务要求关联
+`itemKeys.json` 的 `taskMatches`，即 Dumper 用 BQ 的 `StackMatch`（按任务的 `ignoreNBT` / `partialMatch`）算出的、任务实际接受的物品——
+要求带 NBT 且不忽略 NBT 时全部关联（如指定品种的蜜蜂），否则匹配超过 `GENERIC_MATCH_LIMIT`（16）个时只关联不带 NBT 的基础物品
+（如“任意量筒”）；流体要求为 `fluid.名称`。物品按自己的 `key` / `shortKey` 匹配，合并成流体的展示物品另按 `rawKey` 匹配。
 另有 `achievements`（成就 ID）与 `trophies`（奖杯 ID）：成就、奖杯的 `items` 与物品 `key` 相等即关联，不带 NBT 的写法还关联同一 `rawKey` 的 NBT 变体（另认 `:32767` 通配），
 规则见上文“成就与奖杯”。这些都只在 `MOD_LOCAL_NAME=GTNH` 时生成，输入为同一导出的 `tc4thaumonomicon.json`、`betterquesting/` 与 `achievements.json`。查询端取得 key 后计算对应桶，再在桶内精确匹配 key；
 同一桶超过大小限制时需要读取该桶的所有分块。

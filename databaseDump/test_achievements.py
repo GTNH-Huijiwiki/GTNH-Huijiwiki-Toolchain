@@ -20,6 +20,9 @@ class AchievementLinkTest(unittest.TestCase):
                  "model": {"type": "item", "registryName": "Botania:manaResource", "meta": 4}},
                 {"id": "portal", "condition": {"type": "achievement", "id": "portal"},
                  "model": {"type": "complex", "keys": {"B": "minecraft:obsidian"}}},
+                {"id": "ice_creams", "item": "amazingtrophies:trophy_ice",
+                 "condition": {"type": "item.use.finish", "item": "gregtech:gt.metaitem.02", "meta": 32700},
+                 "model": {"type": "basic", "model": "ice_creams.obj"}},
             ],
         }
 
@@ -34,6 +37,9 @@ class AchievementLinkTest(unittest.TestCase):
         self.assertEqual(trophies[1]["achievement"], "achievement.portal")
         # 结构模型不算关联物品，只继承成就的物品
         self.assertEqual(trophies[1]["items"], ["minecraft:obsidian"])
+        # 不经成就、直接由条件颁发的奖杯：关联条件中的物品
+        self.assertNotIn("achievement", trophies[2])
+        self.assertEqual(trophies[2]["items"], ["amazingtrophies:trophy_ice", "gregtech:gt.metaitem.02:32700"])
 
     def test_items_match_raw_key_and_wildcard(self):
         achievements, trophies = prepare_achievements(self.data())

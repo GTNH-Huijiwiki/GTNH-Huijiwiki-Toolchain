@@ -119,12 +119,60 @@ def read_order(path):
     return order
 
 
-def build_records(source, translations):
+def _values(container):
+    if isinstance(container, dict):
+        return list(container.values())
+    return container if isinstance(container, list) else []
+
+
+def _plain_key(stack):
+    """不含 NBT 的堆栈 key：id 加非零 :Damage。"""
+    damage = int(stack.get("Damage") or 0)
+    return stack["id"] + (f":{damage}" if damage else "")
+
+
+def attach_item_keys(record, item_keys):
+    """把 Dumper 记录的物品 key（itemKeys.json）写到带 NBT 的堆栈的 key 字段；返回写入数。
+
+    item_keys[任务ID] = {icon, tasks: {序号: [key…]}, rewards: {序号: [key…]}}，列表与 requiredItems、
+    rewards/choices 一一对应。只有 key 与 id:Damage 不同（物品带 NBT，物品库中是单独的变体）时才写，
+    线上据此显示改名的奖励等变体，而不是基础物品。
+    """
+    entry = item_keys.get(record.get("questID"))
+    if not isinstance(entry, dict):
+        return 0
+    count = 0
+
+    def apply(stacks, keys):
+        nonlocal count
+        for stack, key in zip(_values(stacks), keys if isinstance(keys, list) else []):
+            if isinstance(stack, dict) and isinstance(stack.get("id"), str) and isinstance(key, str)                     and key != _plain_key(stack):
+                stack["key"] = key
+                count += 1
+
+    icon = record.get("properties", {}).get("betterquesting", {}).get("icon")
+    if isinstance(icon, dict):
+        apply([icon], [entry.get("icon")])
+    for kind, fields in (("tasks", ("requiredItems",)), ("rewards", ("rewards", "choices"))):
+        groups = entry.get(kind) if isinstance(entry.get(kind), dict) else {}
+        for part in _values(record.get(kind)):
+            if not isinstance(part, dict):
+                continue
+            keys = groups.get(str(part.get("index")))
+            for field in fields:
+                if field in part:
+                    apply(part[field], keys)
+    return count
+
+
+def build_records(source, translations, item_keys=None):
     missing, quests, lines = [], {}, {}
     warnings = []
     for path in sorted((source / "Quests").rglob("*.json")):
         record = read_record(path)
         localize(record, "quest", translations, missing)
+        if item_keys:
+            attach_item_keys(record, item_keys)
         identifier = record["questID"]
         if identifier in quests:
             raise ValueError(f"重复的任务 ID {identifier}: {path}")
@@ -190,8 +238,8 @@ def pretty_array_pages(records, field, max_bytes=DEFAULT_MAX_BYTES):
 
 
 def export_quests(source, lang, destination, *, max_bytes=DEFAULT_MAX_BYTES,
-                  strict_translations=False, dry_run=False):
-    lines, quests, missing, warnings = build_records(source, read_lang(lang))
+                  strict_translations=False, dry_run=False, item_keys=None):
+    lines, quests, missing, warnings = build_records(source, read_lang(lang), item_keys)
     if missing and strict_translations:
         raise ValueError(f"缺少 {len(missing)} 项汉化，例如 {missing[0]}")
     # 两类页面全部完成解析、引用校验和字节限制检查后再写入。
