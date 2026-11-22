@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -5,6 +6,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
+import page_hash
 import wiki_inventory
 
 PREFIX = 'Data:Versions/GTNH/9.9/'
@@ -46,6 +48,49 @@ class InventoryScopeTest(unittest.TestCase):
         self.assertEqual(self.rebuild(online), {'gtnhdimension/0.json': 'kept_online', 'Tc4research/0.json': 'kept_online'})
         self.assertEqual(self.rebuild(online, {'Tc4research', 'gtnhdimension'}),
                          {'gtnhdimension/0.json': 'kept_online', 'Tc4research/0.json': 'pending_delete'})
+
+
+class ContentHashTest(InventoryScopeTest):
+    PAGE = PREFIX + 'Quests/0.json'
+
+    def statuses(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            return dict(conn.execute('SELECT title, status FROM tasks WHERE path IS NOT NULL'))
+
+    def rebuild_keep(self):
+        with patch.object(wiki_inventory, 'login'),                 patch.object(wiki_inventory, 'fetch_wiki_titles', return_value=set()):
+            wiki_inventory.rebuild_tasks(False)
+
+    def mark_done(self):
+        path = self.wikitext / wiki_inventory.title_to_path(self.PAGE)
+        stat = path.stat()
+        wiki_inventory.mark_upload_done(wiki_inventory.title_to_path(self.PAGE), self.PAGE, stat.st_mtime, stat.st_size,
+                                        page_hash.file_sha1(path))
+        return path
+
+    def test_same_content_with_new_mtime_stays_done(self):
+        self.rebuild({})
+        path = self.mark_done()
+        os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 100))
+        self.rebuild_keep()
+        self.assertEqual(self.statuses()[self.PAGE], 'done')
+
+    def test_changed_content_becomes_pending(self):
+        self.rebuild({})
+        path = self.mark_done()
+        path.write_text('{"a": 1}', 'utf-8')
+        self.rebuild_keep()
+        self.assertEqual(self.statuses()[self.PAGE], 'pending_upload')
+
+    def test_old_database_without_hash_column_is_migrated(self):
+        with closing(sqlite3.connect(self.db)) as conn:
+            conn.execute('DROP TABLE tasks')
+            conn.execute('CREATE TABLE tasks (title TEXT PRIMARY KEY, path TEXT, status TEXT NOT NULL DEFAULT '
+                         "'pending_upload', mtime REAL, size INTEGER)")
+            conn.commit()
+        wiki_inventory.init_db(False)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertIn('sha1', {row[1] for row in conn.execute('PRAGMA table_info(tasks)')})
 
 
 class DeleteAfterUploadTest(InventoryScopeTest):

@@ -28,6 +28,7 @@ import urllib.parse
 import http.cookiejar
 
 from data_version import in_scope, require_scope, version_module_title, version_tag
+from page_hash import file_sha1
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
@@ -89,12 +90,14 @@ def get_pending_uploads() -> list[tuple[str, str]]:
     ]
 
 
-def mark_upload_done(path: str, title: str, mtime: float, size: int):
-    """上传成功 → 标记 done"""
+def mark_upload_done(path: str, title: str, mtime: float, size: int, sha1: str | None = None):
+    """上传成功 → 标记 done（同时记录内容哈希，重新拆分后内容不变的页不必再传）"""
     with closing(sqlite3.connect(TASK_DB)) as conn:
+        if 'sha1' not in {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}:
+            conn.execute("ALTER TABLE tasks ADD COLUMN sha1 TEXT")
         conn.execute(
-            "UPDATE tasks SET status='done', mtime=?, size=? WHERE title=?",
-            (mtime, size, title)
+            "UPDATE tasks SET status='done', mtime=?, size=?, sha1=? WHERE title=?",
+            (mtime, size, sha1, title)
         )
         conn.commit()
 
@@ -268,7 +271,7 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
 
             # 记录文件指纹
             stat = os.stat(abs_path)
-            mark_upload_done(rel_path, title, stat.st_mtime, stat.st_size)
+            mark_upload_done(rel_path, title, stat.st_mtime, stat.st_size, file_sha1(abs_path))
         except Exception as e:
             err = str(e)
             status, msg = "FAIL", err

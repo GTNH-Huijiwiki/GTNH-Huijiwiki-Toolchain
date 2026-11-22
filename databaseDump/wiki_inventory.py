@@ -27,6 +27,7 @@ import urllib.parse
 import http.cookiejar
 
 from data_version import in_scope, require_scope, version_module_title, version_tag
+from page_hash import file_sha1
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
@@ -137,9 +138,12 @@ def init_db(refresh: bool):
                 path   TEXT,
                 status TEXT NOT NULL DEFAULT 'pending_upload',
                 mtime  REAL,
-                size   INTEGER
+                size   INTEGER,
+                sha1   TEXT
             )
         """)
+        if 'sha1' not in {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}:
+            conn.execute("ALTER TABLE tasks ADD COLUMN sha1 TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_status ON tasks(status)")
         conn.commit()
 
@@ -162,12 +166,12 @@ def get_pending_deletes() -> list[str]:
     return [r[0] for r in rows]
 
 
-def mark_upload_done(path: str, title: str, mtime: float, size: int):
-    """上传成功 → done"""
+def mark_upload_done(path: str, title: str, mtime: float, size: int, sha1: str | None = None):
+    """上传成功 → done（同时记录内容哈希）"""
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute(
-            "UPDATE tasks SET status='done', mtime=?, size=? WHERE title=?",
-            (mtime, size, title)
+            "UPDATE tasks SET status='done', mtime=?, size=?, sha1=? WHERE title=?",
+            (mtime, size, sha1, title)
         )
         conn.commit()
 
@@ -261,9 +265,9 @@ def rebuild_tasks(refresh: bool, delete_dirs=frozenset()):
     if not refresh:
         with closing(sqlite3.connect(DB_PATH)) as conn:
             for row in conn.execute(
-                "SELECT title, path, mtime, size FROM tasks WHERE status='done' AND path IS NOT NULL"
+                "SELECT title, path, mtime, size, sha1 FROM tasks WHERE status='done' AND path IS NOT NULL"
             ):
-                old_done[canonical_title(row[0])] = (row[1], row[2], row[3])
+                old_done[canonical_title(row[0])] = (row[1], row[2], row[3], row[4])
 
     login()
     print(f"Fetching wiki pages under '{WIKI_PREFIX}'...")
@@ -280,20 +284,30 @@ def rebuild_tasks(refresh: bool, delete_dirs=frozenset()):
     upload_count = 0
     delete_count = 0
     done_count = 0
+    unchanged_count = 0
 
     # ① 本地文件的对应 wiki 标题
     for rel_path, (mtime, size) in sorted(local_files.items()):
         title = path_to_title(rel_path)
 
+        sha1 = None
         if canonical_title(title) in old_done:
-            old_path, old_mtime, old_size = old_done[canonical_title(title)]
-            if old_mtime == mtime and old_size == size and old_path == rel_path:
-                tasks.append((title, rel_path, "done", mtime, size))
-                done_count += 1
-                continue
+            old_path, old_mtime, old_size, old_sha1 = old_done[canonical_title(title)]
+            if old_path == rel_path:
+                if old_mtime == mtime and old_size == size:
+                    tasks.append((title, rel_path, "done", mtime, size, old_sha1))
+                    done_count += 1
+                    continue
+                # 修改时间变了不代表内容变了：重新拆分会改写所有文件，内容哈希相同的页不必再传。
+                sha1 = file_sha1(os.path.join(os.path.abspath(WIKITEXT_DIR), rel_path))
+                if old_sha1 and old_sha1 == sha1:
+                    tasks.append((title, rel_path, "done", mtime, size, sha1))
+                    done_count += 1
+                    unchanged_count += 1
+                    continue
 
         # 需要上传（无论 wiki 上是否存在，直接覆盖）
-        tasks.append((title, rel_path, "pending_upload", mtime, size))
+        tasks.append((title, rel_path, "pending_upload", mtime, size, sha1))
         upload_count += 1
 
     # ② wiki 上有但本地没有的 → 待删除。
@@ -304,10 +318,10 @@ def rebuild_tasks(refresh: bool, delete_dirs=frozenset()):
             continue
         directory = top_directory(title)
         if directory in KEEP_ONLINE_DIRS or (directory not in local_dirs and directory not in delete_dirs):
-            tasks.append((title, None, "kept_online", None, None))
+            tasks.append((title, None, "kept_online", None, None, None))
             kept[directory] = kept.get(directory, 0) + 1
             continue
-        tasks.append((title, None, "pending_delete", None, None))
+        tasks.append((title, None, "pending_delete", None, None, None))
         delete_count += 1
     for directory, count in sorted(kept.items()):
         reason = "保留目录" if directory in KEEP_ONLINE_DIRS else "本地整个目录缺失，未用 --delete-dir 点名"
@@ -317,14 +331,14 @@ def rebuild_tasks(refresh: bool, delete_dirs=frozenset()):
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.execute("DELETE FROM tasks")
         conn.executemany(
-            "INSERT INTO tasks VALUES (?, ?, ?, ?, ?)", tasks
+            "INSERT INTO tasks (title, path, status, mtime, size, sha1) VALUES (?, ?, ?, ?, ?, ?)", tasks
         )
         conn.commit()
 
     print(f"\nTask list rebuilt:")
     print(f"  pending_upload:  {upload_count}")
     print(f"  pending_delete:  {delete_count}")
-    print(f"  done:            {done_count}")
+    print(f"  done:            {done_count}（其中 {unchanged_count} 页只是修改时间变了，内容哈希相同）")
 
 
 # ── Main ─────────────────────────────────────────────────────
