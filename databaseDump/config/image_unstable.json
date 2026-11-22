@@ -1,6 +1,11 @@
 {
  "description": "图片黑名单：同一整合包、同一导出器多次导出像素仍不同的图标（渲染依赖时间或随机数）。image_upload.py 默认拒绝上传这些图标，加 --force-unstable 才上传。由 image_check.py stability 生成。",
  "icons": [
+  "Entity HardcoreEnderExpansion.AngryEnderman.png",
+  "Entity ThaumicHorizons.TaintEaterPig.png",
+  "Entity TwilightForest.Hydra.png",
+  "Entity TwilightForest.Mosquito Swarm.png",
+  "EntityHead TwilightForest.Mosquito Swarm.png",
   "icon_Avaritia_Endest_Pearl_dynamic.png",
   "icon_Avaritia_Infinity_Bow.png",
   "icon_Avaritia_Infinity_Bow_dynamic.png",

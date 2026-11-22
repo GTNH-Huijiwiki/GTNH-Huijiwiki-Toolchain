@@ -56,6 +56,32 @@ python databaseDump/image_upload.py
 python databaseDump/image_redirect.py
 ```
 
+### 图片上传任务
+
+`image_inventory.py`、`image_upload.py`、`image_redirect.py` 用 `--kind` 选择图片种类（见 `databaseDump/image_kinds.py`）：
+
+| 种类 | 来源 | 上传的文件 | 中文名重定向 | 状态库 |
+| --- | --- | --- | --- | --- |
+| `items`（默认，物品图片） | `dumps/icons`，计划来自 `split_all.py items` | 物品与流体图标 | 物品中文名 → 图标 | `image_inventory.db` |
+| `entities`（实体图片） | GTNH-Dumper `entityimages` 任务的 `dumps/entity-images` 与 `entity-images.json` | 全身照 `Entity <注册名>.png`、像素头像 `EntityHead <注册名>.png` | 实体中文名 → 头像 | `source_state/<模组>/<版本>/entity_image_inventory.db` |
+
+```bash
+python databaseDump/image_inventory.py --kind entities
+python databaseDump/image_upload.py --kind entities
+python databaseDump/image_redirect.py --kind entities
+```
+
+两种图片共用 `image_check.py` 的判定：线上文件与本地字节相同（或视觉规则判定相同）时记为已上传，
+重跑时按状态库和文件 sha1 缓存跳过，不再上传。GTNH-Dumper 的图片是其内容缓存的硬链接，
+像素不变时修改时间也不变，sha1 缓存几乎全部命中。
+
+实体中文名重定向的取舍：
+- 多个实体同名时，注册名不带模组前缀的原版实体优先；仍不唯一则不建重定向。
+- 与物品图片的中文名或文件名重名时物品优先；Thaumic Tinkerer 的 `mobDisplay` 与 Thaumic Horizons 的 `dummy`
+  只代表生物，不参与物品中文名（`item_names.is_mob_display`），这些名字留给实体。
+- 线上已有同名的独立图片（不是重定向）时不覆盖。
+跳过的名字在运行时列出。
+
 `MOD_LOCAL_NAME` 选择本地导出来源，`MOD_REMOTE_NAME` 与 `MOD_VERSION` 决定 Wiki 页面名称。
 例如本地模组名为 `sciencenotleisure`、远端名为 `GTNotLeisure`、版本为 `0.2.7-rc2` 时：
 

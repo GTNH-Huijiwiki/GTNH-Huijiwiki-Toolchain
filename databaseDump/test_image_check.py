@@ -160,9 +160,23 @@ class StabilityTest(unittest.TestCase):
                 result = image_check.record_stability([root / 'a', root / 'b'])
                 self.assertEqual(result['added'], 1)
                 self.assertEqual(image_check.unstable_icons(), {'old.png', 'y.png'})
-                # 修好导出器后用新结果重建名单
+                # 修好导出器后用新结果重建名单：只重建本次比较到的文件，其余（如另一类图片）保持原状
                 image_check.record_stability([root / 'a', root / 'a'], replace=True)
-                self.assertEqual(image_check.unstable_icons(), set())
+                self.assertEqual(image_check.unstable_icons(), {'old.png'})
+
+    def test_entity_images_join_the_comparison(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for run, hashes in (('a', {'Entity X.png': '1', 'EntityHead X.png': '2'}),
+                                ('b', {'Entity X.png': '1', 'EntityHead X.png': '9'})):
+                (root / run).mkdir()
+                (root / run / 'entity-images.json').write_text(json.dumps({'pixelHashes': hashes}))
+            config = root / 'image_unstable.json'
+            config.write_text(json.dumps({'icons': ['item.png']}))
+            with patch('image_check.UNSTABLE_CONFIG', config):
+                result = image_check.record_stability([root / 'a', root / 'b'], replace=True)
+                self.assertEqual(result['compared'], 2)
+                self.assertEqual(image_check.unstable_icons(), {'item.png', 'EntityHead X.png'})
 
 
 if __name__ == '__main__':

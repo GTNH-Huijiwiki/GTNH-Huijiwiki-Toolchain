@@ -3,8 +3,9 @@ image_upload.py
 多线程批量上传图标 — 从 image_inventory.db 读取 icon_state=待更新 的任务，
 上传完成后实时标记为已上传。
 
-用法:
+用法（--kind items|entities 选择物品图片或实体图片，默认 items，见 image_kinds.py）:
     python image_upload.py                   # 全部（8 线程）
+    python image_upload.py --kind entities   # 实体全身照与头像
     python image_upload.py --debug           # 前 20 张
     python image_upload.py -t 16             # 16 线程
     python image_upload.py --force-unstable  # 连同黑名单（config/image_unstable.json）里的图标一起上传
@@ -22,10 +23,10 @@ import threading
 import urllib.request
 import urllib.parse
 import http.cookiejar
-from image_version import image_paths, require_source
-from image_plan import prepare_plan
+from image_version import require_source
+from image_kinds import LABELS, kind_exempt, kind_from_argv, kind_paths, kind_plan, kind_unstable
 from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy, HASH_CACHE
-from image_check import check_pending, exempt_icons, unstable_icons
+from image_check import check_pending
 from pathlib import Path
 from item_names import canonical_file
 import hashlib
@@ -58,7 +59,8 @@ def _load_dotenv():
 _load_dotenv()
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DUMPS_DIR, INVENTORY_DB, ICONS_DIR, NEW_CSV = image_paths(os.path.dirname(os.path.abspath(__file__)))
+KIND = kind_from_argv()
+DUMPS_DIR, INVENTORY_DB, ICONS_DIR, NEW_CSV = kind_paths(KIND, os.path.dirname(os.path.abspath(__file__)))
 
 BASE = os.environ.get("BASE_URL", "https://gtnh.huijiwiki.com/api.php")
 if BASE == "http://gtnh.huijiwiki.com/api.php":
@@ -75,9 +77,9 @@ _stop = threading.Event()
 def get_pending_icons(plan=None) -> list[str]:
     """读取当前来源中 icon_state=待更新 且本地存在的图标（去重）。"""
     if plan is None:
-        plan = prepare_plan(DUMPS_DIR, NEW_CSV)
+        plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     current_icons = set(plan['uploadIcons'])
-    exempt = exempt_icons(DUMPS_DIR)
+    exempt = kind_exempt(KIND, DUMPS_DIR)
     update_state(INVENTORY_DB, current_icons, plan['redirects'], icon_hashes(ICONS_DIR, current_icons, HASH_CACHE), exempt)
     with closing(sqlite3.connect(INVENTORY_DB)) as conn:
         legacy = [r[0] for r in conn.execute("SELECT icon_name FROM images WHERE icon_state='待核验'")
@@ -260,10 +262,11 @@ def main():
         if a == "-t" and i + 1 < len(args):
             threads = int(args[i + 1])
 
-    plan = prepare_plan(DUMPS_DIR, NEW_CSV)
+    print(f"[{LABELS[KIND]}]")
+    plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     tasks = get_pending_icons(plan)
     # 黑名单里的图标多次导出仍有波动，默认拒绝上传（线上没有的也不传），--force-unstable 才上传。
-    blocked = sorted(set(tasks) & unstable_icons())
+    blocked = sorted(set(tasks) & kind_unstable(KIND))
     if blocked and "--force-unstable" not in args:
         tasks = [t for t in tasks if t not in set(blocked)]
         with closing(sqlite3.connect(INVENTORY_DB)) as conn:
