@@ -3,8 +3,9 @@ image_redirect.py
 多线程批量创建图片重定向 — 从 image_inventory.db 读取 redirect_state=待更新 的任务，
 完成后实时标记为已上传。
 
-用法:
+用法（--kind items|entities 选择物品图片或实体图片，默认 items，见 image_kinds.py）:
     python image_redirect.py                   # 全部（8 线程）
+    python image_redirect.py --kind entities   # 实体中文名 → 头像
     python image_redirect.py --debug           # 前 20 条
     python image_redirect.py -t 16             # 16 线程
 """
@@ -21,10 +22,10 @@ import threading
 import urllib.request
 import urllib.parse
 import http.cookiejar
-from image_version import image_paths, require_source
+from image_version import require_source
 from image_state import pending_redirects
 from image_state import update_state
-from image_plan import prepare_plan
+from image_kinds import LABELS, kind_from_argv, kind_paths, kind_plan, standalone_files
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
@@ -57,7 +58,8 @@ BASE = os.environ.get("BASE_URL", "https://gtnh.huijiwiki.com/api.php")
 if BASE == "http://gtnh.huijiwiki.com/api.php":
     BASE = "https://gtnh.huijiwiki.com/api.php"
 AUTHKEY = os.environ.get("AUTHKEY", "")
-DUMPS_DIR, INVENTORY_DB, _, NEW_CSV = image_paths(os.path.dirname(os.path.abspath(__file__)))
+KIND = kind_from_argv()
+DUMPS_DIR, INVENTORY_DB, _, NEW_CSV = kind_paths(KIND, os.path.dirname(os.path.abspath(__file__)))
 USERNAME = os.environ.get("BOT_USERNAME", "")
 PASSWORD = os.environ.get("BOT_PASSWORD", "")
 
@@ -79,10 +81,17 @@ def sanitize_title(title: str) -> str:
 def get_pending_redirects(plan=None) -> list[tuple[str, str]]:
     """读取当前 CSV 中有效且图片已上传的待更新重定向。"""
     if plan is None:
-        plan = prepare_plan(DUMPS_DIR, NEW_CSV)
+        plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     current_redirects = plan['redirects']
     update_state(INVENTORY_DB, set(plan['uploadIcons']), current_redirects)
-    return pending_redirects(INVENTORY_DB, current_redirects)
+    tasks = pending_redirects(INVENTORY_DB, current_redirects)
+    if KIND == 'entities' and tasks:
+        # 实体中文名可能已被人工上传的独立图片占用，不把它改成重定向。
+        taken = standalone_files(title for title, _ in tasks)
+        for title in sorted(taken):
+            print(f"  left out {title}: 线上已有同名独立图片")
+        tasks = [(title, icon) for title, icon in tasks if title not in taken]
+    return tasks
 
 
 def mark_redirect_done(redirect_from: str, icon_name: str):
@@ -227,7 +236,8 @@ def main():
         if a == "-t" and i + 1 < len(args):
             threads = int(args[i + 1])
 
-    plan = prepare_plan(DUMPS_DIR, NEW_CSV)
+    print(f"[{LABELS[KIND]}]")
+    plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     tasks = get_pending_redirects(plan)
     if not tasks:
         print("No pending redirects. Run image_inventory.py first.")

@@ -52,6 +52,15 @@ def is_quest_placeholder(item):
     return re.match(r"^betterquesting:(?:pattern_placeholder|placeholder)(?:$|[:_])", raw) is not None
 
 
+# 只用于在 NEI 中代表某个生物的物品，名称就是生物名；中文图片名留给实体头像（image_kinds.py entities）。
+MOB_DISPLAY_ITEMS = frozenset({"ThaumicTinkerer:mobDisplay", "ThaumicHorizons:dummy"})
+
+
+def is_mob_display(item):
+    raw = item.get("rawKey") or item.get("key", "")
+    return ":".join(raw.split(":")[:2]) in MOB_DISPLAY_ITEMS
+
+
 def collect_names(items):
     names = defaultdict(set)
     candidates = defaultdict(dict)
@@ -61,7 +70,7 @@ def collect_names(items):
         if not key or not isinstance(name, str) or not name.strip():
             continue
         names[name].add(key)
-        if is_quest_placeholder(item):
+        if is_quest_placeholder(item) or is_mob_display(item):
             continue
         icon = item.get("iconName") or item.get("icon")
         title = image_title(name)

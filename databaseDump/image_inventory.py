@@ -1,5 +1,6 @@
 """更新本地图片与中文别名状态，并对照线上文件判定哪些需要重传（规则见 image_check.py）。
 
+--kind items|entities 选择物品图片（默认）或实体图片，见 image_kinds.py。
 --offline 不查询线上；--stats 查看统计；--clean-dynamic 清理动画条带任务。
 """
 
@@ -10,9 +11,9 @@ from contextlib import closing
 from pathlib import Path
 
 from image_state import init_db as initialize_state, update_state, icon_hashes, HASH_CACHE
-from image_check import check_pending, exempt_icons
-from image_plan import prepare_plan
-from image_version import image_paths, require_source
+from image_check import check_pending
+from image_kinds import LABELS, kind_exempt, kind_from_argv, kind_paths, kind_plan
+from image_version import require_source
 
 
 def _load_dotenv():
@@ -31,7 +32,8 @@ def _load_dotenv():
 
 
 _load_dotenv()
-DUMPS_DIR, DB_PATH, ICONS_DIR, NEW_CSV = image_paths(os.path.dirname(os.path.abspath(__file__)))
+KIND = kind_from_argv()
+DUMPS_DIR, DB_PATH, ICONS_DIR, NEW_CSV = kind_paths(KIND, os.path.dirname(os.path.abspath(__file__)))
 
 
 def init_db():
@@ -56,10 +58,11 @@ WIKI_ORIGINALS = Path(__file__).resolve().parent / "source_state" / "wiki-origin
 
 def update_inventory(offline=False):
     require_source(DUMPS_DIR)
-    plan = prepare_plan(DUMPS_DIR, NEW_CSV)
+    print(f"[{LABELS[KIND]}]")
+    plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     redirects = plan['redirects']
     icons = set(plan['uploadIcons'])
-    exempt = exempt_icons(DUMPS_DIR)
+    exempt = kind_exempt(KIND, DUMPS_DIR)
     update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons, HASH_CACHE), exempt)
     print(f"Current icons: {len(icons):,}; current redirects: {len(redirects):,}; exempt: {len(exempt):,}")
     if not offline:

@@ -97,24 +97,32 @@ def exempt_icons(source) -> dict[str, str]:
 
 
 def pixel_manifest(source) -> dict[str, str]:
-    path = Path(source) / 'icon-hashes.json'
-    if not path.is_file():
-        raise ValueError(f'缺少 Dumper 像素哈希清单: {path}')
-    return json.loads(path.read_text('utf-8'))['images']
+    """Dumper 的像素哈希：物品图标的 icon-hashes.json 与实体图片 entity-images.json 的 pixelHashes 合并。"""
+    result = {}
+    icons = Path(source) / 'icon-hashes.json'
+    if icons.is_file():
+        result.update(json.loads(icons.read_text('utf-8'))['images'])
+    entities = Path(source) / 'entity-images.json'
+    if entities.is_file():
+        result.update(json.loads(entities.read_text('utf-8')).get('pixelHashes', {}))
+    if not result:
+        raise ValueError(f'缺少 Dumper 像素哈希清单: {icons} 或 {entities}')
+    return result
 
 
 def record_stability(sources, replace=False) -> dict:
     """同一环境多次导出中像素有差异的图片写入黑名单（config/image_unstable.json）。
 
-    传入两个或更多 dumps 目录，任意两次之间像素不同即列入。默认并入现有名单；
-    replace=True 时只用本次比较的结果重建名单（例如导出器修好一批波动后）。
+    传入两个或更多 dumps 目录，任意两次之间像素不同即列入。物品图标与实体图片（entity-images.json）都参与比较，
+    只比较各次都有的文件。默认并入现有名单；replace=True 时只用本次比较的结果重建名单
+    （例如导出器修好一批波动后），本次没有比较到的文件保持原状。
     """
     if len(sources) < 2:
         raise ValueError('至少需要两次导出')
     manifests = [pixel_manifest(source) for source in sources]
     common = set.intersection(*(set(m) for m in manifests))
     changed = {name for name in common if len({m[name] for m in manifests}) > 1}
-    known = set() if replace else unstable_icons()
+    known = unstable_icons() - common if replace else unstable_icons()
     merged = sorted(known | changed)
     UNSTABLE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     UNSTABLE_CONFIG.write_text(json.dumps({
