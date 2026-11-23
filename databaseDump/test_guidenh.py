@@ -663,6 +663,32 @@ class NavboxModuleTest(unittest.TestCase):
         self.assertIn('{name = "技巧", link = "指南:GuideNH/gt/tips", icon = false}', text)
         self.assertNotIn('style', text)
 
+    def test_navbox_uses_item_icons_of_the_pages(self):
+        items = guidenh.ItemIndex([('mod:wrench', 'mod:wrench', None), ('mod:anim', 'mod:anim', None)],
+                                  {'mod:wrench': ('icon_mod_wrench.png', 1), 'mod:anim': ('icon_mod_anim.png', 8)})
+        def page(page_id, title, icon, parent=None):
+            navigation = {'title': title, 'icon': icon}
+            if parent:
+                navigation['parent'] = parent
+            return guidenh.Page('gt', page_id, Path(page_id + '.md'), {'navigation': navigation}, '')
+        pages = [page('index', '首页', None), page('a', '甲', 'mod:wrench', 'index.md'), page('b', '乙', '<mod:anim>', 'index.md'),
+                 page('c', '丙', 'mod:missing', 'index.md'), page('d', '丁', 'mod:wrench 0', 'index.md')]
+        site = guidenh.Site(Path('.'), {p.key: p for p in pages}, Path('.'), None)
+        text = guidenh.navbox_modules(site, items)['Module:Navbox/GuideNH']
+        self.assertIn('{name = "甲", link = "指南:GuideNH/gt/a", icon = "icon_mod_wrench"}', text)
+        self.assertIn('{name = "乙", link = "指南:GuideNH/gt/b", icon = false}', text)  # 动画图标不用
+        self.assertIn('{name = "丙", link = "指南:GuideNH/gt/c", icon = false}', text)  # 解析不到
+        self.assertIn('{name = "丁", link = "指南:GuideNH/gt/d", icon = "icon_mod_wrench"}', text)
+        self.assertEqual(guidenh.clean_icon_id('<mod:x:3>'), 'mod:x:3')
+        self.assertEqual(guidenh.clean_icon_id('minecraft:potion 16384'), 'minecraft:potion:16384')
+        self.assertIsNone(guidenh.clean_icon_id(None))
+
+    def test_order_follows_position_descending_then_sidebar_title(self):
+        low = guidenh.Page('gt', 'a', Path('a.md'), {'navigation': {'title': '乙', 'position': 1}}, '# 子')
+        high = guidenh.Page('gt', 'b', Path('b.md'), {'navigation': {'title': '甲', 'position': 5}}, '# 孙')
+        tie = guidenh.Page('gt', 'c', Path('c.md'), {'navigation': {'title': '丙', 'position': 1}}, '# 啊')
+        self.assertEqual([p.id for p in sorted([low, high, tie], key=guidenh.page_order)], ['b', 'c', 'a'])
+
     def test_navbox_module_is_one_file_and_old_per_pack_modules_are_cleaned(self):
         with tempfile.TemporaryDirectory() as tmp:
             legacy = Path(tmp) / 'Module' / 'Navbox' / 'GuideNH' / 'gregtech.lua'

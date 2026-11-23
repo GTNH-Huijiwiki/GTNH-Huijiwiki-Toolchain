@@ -102,7 +102,8 @@ def repository_info(directory: Path) -> dict:
 class ItemIndex:
     """物品 ID（modid:name[:meta][:{snbt}]）→ 维基物品 key。"""
 
-    def __init__(self, entries):
+    def __init__(self, entries, icons=None):
+        self.icons = icons or {}  # 物品 key → (图标文件名, 帧数)
         self.by_raw = defaultdict(list)
         for raw, key, nbt in entries:
             self.by_raw[raw].append((key, nbt))
@@ -110,6 +111,14 @@ class ItemIndex:
 
     def __len__(self):
         return len(self.by_raw)
+
+    def icon_name(self, ident):
+        """物品 ID → 维基图标文件名（不带 .png）；找不到、动画图标（帧数大于 1）或没有图标时返回 None。"""
+        key = self.resolve(ident) if ident else None
+        icon, frames = self.icons.get(key, (None, 1))
+        if not icon or frames > 1:
+            return None
+        return icon[:-4] if icon.lower().endswith('.png') else icon
 
     def __call__(self, ident, meta=None, nbt=None):
         return self.resolve(ident, meta, nbt)
@@ -147,7 +156,7 @@ class ItemIndex:
 
 def load_item_index(dumps_dir, wikitext_root) -> ItemIndex:
     """优先读本版本已拆分的 Items（与线上一致的最终 key）；没有时读导出的 advitempanel.json。"""
-    entries = []
+    entries, icons = [], {}
     version = Path(wikitext_root) / 'Data' / 'Versions' / Path(*version_tag().split('/')) / 'Items'
     pages = sorted(version.glob('*/*.json')) if version.is_dir() else []
     if pages:
@@ -155,6 +164,8 @@ def load_item_index(dumps_dir, wikitext_root) -> ItemIndex:
         for page in pages:
             for item in json.loads(page.read_text('utf-8')).get('items', []):
                 entries.append((item.get('rawKey') or item['key'], item['key'], item.get('nbt')))
+                if item.get('iconName'):
+                    icons[item['key']] = (item['iconName'], int(item.get('frameCount') or 1))
     else:
         path = Path(dumps_dir) / 'advitempanel.json'
         if not path.is_file():
@@ -163,7 +174,7 @@ def load_item_index(dumps_dir, wikitext_root) -> ItemIndex:
         data = json.loads(path.read_text('utf-8'))
         for item in next(iter(data.values())):
             entries.append((item['key'], item.get('shortKey') or item['key'], item.get('nbt')))
-    return ItemIndex(entries)
+    return ItemIndex(entries, icons)
 
 
 # ── 物品与指南页面的关联 ─────────────────────────────────────
@@ -231,6 +242,24 @@ def attach_guide_pages(items, index) -> int:
 
 # ── 页面 ─────────────────────────────────────────────────────
 
+def clean_icon_id(value):
+    """navigation.icon 写作 modid:name、modid:name:meta、<modid:name:meta> 或 'modid:name meta'，统一成 ItemIndex 认的写法。"""
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.startswith('<') and text.endswith('>'):
+        text = text[1:-1].strip()
+    parts = text.split()
+    if len(parts) == 2 and parts[1].isdigit():
+        text = f'{parts[0]}:{parts[1]}'
+    return text or None
+
+
+def page_order(page):
+    """与游戏里导航树一致：position 大的在前，同值按侧栏标题（navigation.title）排。"""
+    return (-page.position, page.sidebar_title)
+
+
 class Page:
     def __init__(self, mod, page_id, path, meta, body):
         self.mod, self.id, self.path, self.meta, self.body = mod, page_id, path, meta, body
@@ -242,6 +271,7 @@ class Page:
         self.title_text = convert.split_title(body)[0] or self.sidebar_title
         self.parent_href = navigation.get('parent')
         self.position = int(navigation.get('position') or 0)
+        self.icon_id = clean_icon_id(navigation.get('icon'))
         self.wiki_title = f'{scope.title_prefix()}{self.key}'
         self.headings = []
         fence = None
@@ -354,11 +384,11 @@ class Site:
             return self.image(page, src)
 
         def subpages():
-            kids = sorted(self.children.get(page.key, []), key=lambda p: (-p.position, p.title_text))
+            kids = sorted(self.children.get(page.key, []), key=page_order)
             return [(kid.wiki_title, kid.title_text) for kid in kids]
 
         def category_pages(name):
-            found = sorted(self.categories.get(name.casefold(), []), key=lambda p: (-p.position, p.title_text))
+            found = sorted(self.categories.get(name.casefold(), []), key=page_order)
             return [(entry.wiki_title, entry.title_text) for entry in found if entry.key != page.key]
 
         return convert.PageContext(page.key, items, resolve_page, resolve_image, scenes, subpages,
@@ -467,7 +497,7 @@ def header(site, page, commit) -> str:
 
 
 def landing_page(site, commit) -> str:
-    roots = sorted((p for p in site.pages.values() if not site.parent_key(p)), key=lambda p: (-p.position, p.key))
+    roots = sorted((p for p in site.pages.values() if not site.parent_key(p)), key=lambda p: (page_order(p), p.key))
     lines = [display_title_line('GuideNH - 总览').rstrip('\n'),
              '本页是 [[GuideNH]] 游戏内指南的内容总览，列出同步自 GuideNH 内容包 '
              f'[{UPSTREAM_URL} GTNH-Guide-Pack]（版本 {commit}）的中文页面；页面由机器人生成，请勿直接编辑。',
@@ -537,22 +567,27 @@ def _lua_string(value) -> str:
     return '"' + text + '"'
 
 
-def navbox_modules(site) -> dict:
+def navbox_modules(site, items=None) -> dict:
     """整个 GuideNH 共用一个导航框（模块:Navbox/<前缀>），每个内容包是一个顶层分组，其下按导航树分组。
 
     格式沿用维基其他导航框的数据表：title、defaultIcon、list；带 list 的表是分组（groupName），与单项平级。
-    单项只写名称和链接，不带图标。有子页面的页面成为分组，分组第一项是页面自己。
+    页面的 navigation.icon 能解析到有静态图标的物品时，写成单项的 icon（图标文件名）；有子页面的页面成为分组，分组第一项是页面自己（带它的图标）。
     """
     def ordered(pages):
-        return sorted(pages, key=lambda page: (-page.position, page.title_text))
+        return sorted(pages, key=page_order)
+
+    def icon_field(page):
+        name = items.icon_name(page.icon_id) if items is not None and page.icon_id else None
+        return _lua_string(name) if name else 'false'
 
     def entry(page, indent, extra=()):
         pad = '    ' * indent
         children = ordered(site.children.get(page.key, [])) + list(extra)
-        item = f'{{name = {_lua_string(page.title_text)}, link = {_lua_string(page.wiki_title)}, icon = false}}'
+        item = (f'{{name = {_lua_string(page.title_text)}, link = {_lua_string(page.wiki_title)}, '
+                f'icon = {icon_field(page)}}}')
         if not children:
             return pad + item + ','
-        own = f'{{name = {_lua_string("总览")}, link = {_lua_string(page.wiki_title)}, icon = false}}'
+        own = f'{{name = {_lua_string("总览")}, link = {_lua_string(page.wiki_title)}, icon = {icon_field(page)}}}'
         lines = [pad + '{', pad + f'    groupName = {_lua_string(page.title_text)},', pad + '    list = {',
                  pad + '        ' + own + ',']
         lines += [entry(child, indent + 2) for child in children]
@@ -680,7 +715,7 @@ def run(dumps_dir, wikitext_root, debug=False):
     landing_path = scope.local_landing_path(wikitext_root)
     if not landing_path.is_file() or landing_path.read_text('utf-8') != landing:
         landing_path.write_text(landing, 'utf-8', newline='\n')
-    removed += write_navbox_module(wikitext_root, navbox_modules(site)[scope.module_title()], prune=not limit)
+    removed += write_navbox_module(wikitext_root, navbox_modules(site, items)[scope.module_title()], prune=not limit)
     plan = stage_images(site, used_scenes, staging)
     scope.image_plan_path().write_text(json.dumps(
         {'schemaVersion': 1, 'uploadIcons': sorted(plan), 'redirects': {}}, ensure_ascii=False, indent=1), 'utf-8')
