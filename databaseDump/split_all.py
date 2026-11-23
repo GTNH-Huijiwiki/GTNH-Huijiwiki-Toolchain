@@ -1799,6 +1799,24 @@ def biome_tags(biomes, names) -> dict:
             "forestryHumidity": table("forestryHumidity", names["forestryHumidity"])}
 
 
+def dimension_biomes_page(data: dict) -> dict:
+    """dimensionbiomes.json -> Biomes/Dimensions/0.json：每个维度的群系 ID，按维度 ID 排序。
+
+    保留采样方法 method、维度 ID、群系 ID、管理器来源 chunkManagerSource 与取不到时的原因 errors。
+    chunkManagerSource 为 world-type 的维度只继承了世界类型的管理器，群系不可靠，线上不展示。
+    出生点群系 spawnBiomes、维度提供器类名和读取格数只对排查有用，不上传。线上按 dimensionId 与维度表（gtnhdimension）关联。
+    """
+    rows = []
+    for record in sorted(data.get("dimensions", []), key=lambda item: item["dimensionId"]):
+        row = {"dimensionId": record["dimensionId"], "biomes": sorted(set(record.get("biomes", [])))}
+        if record.get("chunkManagerSource"):
+            row["chunkManagerSource"] = record["chunkManagerSource"]
+        if record.get("errors"):
+            row["errors"] = list(record["errors"])
+        rows.append(row)
+    return {"method": data.get("method", {}), "dimensions": rows}
+
+
 def do_biomes(debug: bool):
     """biomes.json -> Biomes/List/N.json（群系）、Biomes/Books/0.json（巫术的两本生态之书）、
     Biomes/Tags/0.json（BiomeDictionary 标签与林业气候的中文及群系数）。
@@ -1832,6 +1850,16 @@ def do_biomes(debug: bool):
     if books:
         write_bounded(root / "Books" / "0.json", encode_json(books), HARD_MAX_BYTES)
     write_bounded(root / "Tags" / "0.json", encode_json(biome_tags(biomes, names)), HARD_MAX_BYTES)
+    dimension_path = Path(DUMPS_DIR) / "dimensionbiomes.json"
+    if dimension_path.is_file() and dimension_path.stat().st_size:
+        page = dimension_biomes_page(json.loads(dimension_path.read_text(encoding="utf-8")))
+        known = {biome["id"] for biome in biomes}
+        unknown = sorted({i for row in page["dimensions"] for i in row["biomes"]} - known)
+        write_bounded(root / "Dimensions" / "0.json", encode_json(page), HARD_MAX_BYTES)
+        print(f"  {len(page['dimensions'])} dimensions -> Biomes/Dimensions/0.json"
+              + (f"；{len(unknown)} 个群系 ID 不在群系表中: {unknown[:20]}" if unknown else ""))
+    else:
+        print(f"  没有 dimensionbiomes.json，跳过维度群系: {dimension_path}")
     extended = len(books.get("bookOfBiomesExtended", {}).get("pages", []))
     print(f"  {len(biomes):,} biomes -> {len(written)} file(s); book pages: {extended}")
     if missing:

@@ -1,6 +1,6 @@
 import unittest
 
-from split_all import localize_biomes
+from split_all import dimension_biomes_page, localize_biomes
 
 NAMES = {'biomes': [{'name': 'Oasis', 'zh': '绿洲', 'bookPages': [219]},
                     {'name': 'Oasis', 'zh': '绿洲（RWG2）', 'id': 323},
@@ -23,6 +23,21 @@ class LocalizeBiomesTest(unittest.TestCase):
         self.assertEqual(missing, ['Oasis', 'Jungle'])
         self.assertEqual(biomes[3]['typesZh'], ['平原', 'NEW'])
         self.assertEqual((biomes[3]['forestryTemperatureZh'], biomes[3]['forestryHumidityZh']), ('一般', '干旱'))
+
+
+class DimensionBiomesPageTest(unittest.TestCase):
+    def test_sorted_dimensions_and_pruned_fields(self):
+        data = {'method': {'radius': 8192},
+                'dimensions': [
+                    {'dimensionId': 1, 'providerClass': 'x', 'samples': 9, 'biomes': [9, 9], 'spawnBiomes': [], 'chunkManagerSource': 'provider'},
+                    {'dimensionId': -1, 'biomes': [8], 'spawnBiomes': [8]},
+                    {'dimensionId': 7, 'biomes': [], 'errors': ['no chunk manager']}]}
+        page = dimension_biomes_page(data)
+        self.assertEqual(page['method'], {'radius': 8192})
+        self.assertEqual(page['dimensions'], [
+            {'dimensionId': -1, 'biomes': [8]},
+            {'dimensionId': 1, 'biomes': [9], 'chunkManagerSource': 'provider'},
+            {'dimensionId': 7, 'biomes': [], 'errors': ['no chunk manager']}])
 
 
 if __name__ == '__main__':
