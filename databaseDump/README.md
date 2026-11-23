@@ -186,6 +186,8 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 | `Biomes/Books/0.json` | 巫术的两本书：`bookOfBiomes`（季节变迁仪式指南，每类群系一页）与 `bookOfBiomesExtended`（每个群系一页，含游戏内显示的降雨、温度、降雪、打雷四行，中英文各一份，以及分节） |
 | `Biomes/Tags/0.json` | `types`（BiomeDictionary 标签）、`forestryTemperature`、`forestryHumidity` 三张表，每项 `{id, zh, count}`：游戏中的名字、中文名（配置中没有则为 null）与群系数 |
 
+| `Biomes/Dimensions/0.json` | `method`（Dumper 的采样方法：种子、范围）与数组 `dimensions`，每个维度一条：`dimensionId`、可生成的群系 ID `biomes`、管理器来源 `chunkManagerSource`（`world-type` 的维度群系不可靠，线上不展示）、取不到时的原因 `errors`。读 `dimensionbiomes.json`（Dumper 的 `dimensionbiomes` 任务），文件不存在时跳过；线上按 `dimensionId` 与 `gtnhdimension` 关联 |
+
 游戏里没有群系名、标签和林业气候的中文，拆分时从 `config/biome_names.json` 补 `nameZh`、`typesZh`、
 `forestryTemperatureZh`、`forestryHumidityZh`。群系按 ID → 英文名加书页码 → 唯一的英文名匹配；缺中文名的会列出来，补进配置即可。
 这份配置最初取自人工整理的 `Data:生物群系.json`（已由本目录的数据取代）。
