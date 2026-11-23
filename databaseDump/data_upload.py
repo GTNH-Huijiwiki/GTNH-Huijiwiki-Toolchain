@@ -27,8 +27,10 @@ import urllib.request
 import urllib.parse
 import http.cookiejar
 
+import guidenh_scope as gscope
 from data_version import in_scope, require_scope, version_module_title, version_tag
 from page_hash import file_sha1
+from platform_json import normalize_page
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True)
@@ -70,6 +72,16 @@ PASSWORD = os.environ.get("BOT_PASSWORD", "")
 WIKI_PREFIX = "Data:Versions/" + version_tag() + "/"
 
 _stop = threading.Event()
+GUIDENH_SUMMARY = "机器人：同步 GuideNH（GTNH-Guide-Pack）"
+
+
+def is_guidenh(title: str) -> bool:
+    return gscope.enabled() and gscope.is_guidenh_title(title)
+
+
+def is_data_title(title: str) -> bool:
+    """本次要上传的页面：当前版本的数据页，或 GuideNH 页面。"""
+    return in_scope(title, WIKI_PREFIX) or is_guidenh(title)
 
 
 # ── Task DB helpers ────────────────────────────────────────────
@@ -85,6 +97,7 @@ def get_pending_uploads() -> list[tuple[str, str]]:
     return [
         (path, title) for path, title in rows
         if title.replace(" ", "_") == config_title
+        or is_guidenh(title)
         or (in_scope(title, WIKI_PREFIX)
             and not (in_scope(title, WIKI_PREFIX + "Index/") and title.endswith(".tabx")))
     ]
@@ -108,7 +121,7 @@ def get_pending_deletes() -> list[str]:
         rows = conn.execute(
             "SELECT title FROM tasks WHERE status='pending_delete' ORDER BY title"
         ).fetchall()
-    return [r[0] for r in rows if in_scope(r[0], WIKI_PREFIX)]
+    return [r[0] for r in rows if is_data_title(r[0])]
 
 
 def mark_delete_done(title: str):
@@ -262,8 +275,10 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
         try:
             with open(abs_path, "r", encoding="utf-8") as f:
                 text = f.read()
+            # 平台会把 JSON 键里的 . 和 $ 改成全角；先转换，上传内容才和线上保存的、清单里的哈希一致
+            text = normalize_page(text, abs_path)
             result = edit_page(opener, title, text,
-                               summary="机器人：批量上传数据", bot=True)
+                               summary=GUIDENH_SUMMARY if is_guidenh(title) else "机器人：批量上传数据", bot=True)
             if "nochange" in result:
                 status, msg = "SKIP", ""
             else:
@@ -300,7 +315,9 @@ def only_directories(args) -> frozenset:
 
 
 def selected(title: str, only: frozenset) -> bool:
-    """当前版本的数据页；指定 --only 时还须位于所选目录（标题中下划线与空格等同）。"""
+    """当前版本的数据页或 GuideNH 页面；指定 --only 时还须位于所选目录（标题中下划线与空格等同）。"""
+    if is_guidenh(title):
+        return not only or gscope.top_directory().casefold() in {name.casefold() for name in only}
     if not in_scope(title, WIKI_PREFIX):
         return False
     if not only:
@@ -337,7 +354,8 @@ def main(argv=None):
     upload_tasks = [(path, title) for path, title in pending if selected(title, only)]
     if only:
         print(f"Only: {', '.join(sorted(only))}")
-    config_tasks = [(path, title) for path, title in pending if not in_scope(title, WIKI_PREFIX)]
+    config_title = version_module_title(WIKI_PREFIX).replace(" ", "_")
+    config_tasks = [(path, title) for path, title in pending if title.replace(" ", "_") == config_title]
     if upload_tasks:
         if debug:
             upload_tasks = upload_tasks[:20]
@@ -372,7 +390,7 @@ def main(argv=None):
             while t.is_alive():
                 t.join(timeout=0.5)
 
-        remaining = sum(in_scope(title, WIKI_PREFIX) for _, title in get_pending_uploads())
+        remaining = sum(is_data_title(title) for _, title in get_pending_uploads())
         print(f"Upload done! OK: {counters['OK']}, SKIP: {counters['SKIP']}, FAIL: {counters['FAIL']}")
         failures += counters['FAIL']
         if remaining:
@@ -382,7 +400,7 @@ def main(argv=None):
 
     # 配置中的桶数对应完整的数据集；调试上传、失败和中断均留待下次发布。
     if config_tasks and not _stop.is_set():
-        data_pending = any(in_scope(title, WIKI_PREFIX) for _, title in get_pending_uploads())
+        data_pending = any(is_data_title(title) for _, title in get_pending_uploads())
         if debug or failures or data_pending:
             print("Version config pending: run a complete successful data upload to publish it.")
         else:

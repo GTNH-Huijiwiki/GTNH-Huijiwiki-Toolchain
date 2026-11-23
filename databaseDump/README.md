@@ -16,6 +16,7 @@
 - `item_names.py generate-config`：生成本地中文图片候选报告，供编辑首选配置时参考。
 - `wiki_inventory.py`：扫描本地 `wikitext/`，对比 wiki 现有页面，生成 `wiki_inventory.db`。
 - `image_inventory.py`：扫描 `dumps/icons/` 和重定向映射，生成 `image_inventory.db`。
+- `guidenh.py`：GuideNH 任务，把内容包仓库里的中文指南转成 `指南:GuideNH/` 页面，见下文“GuideNH”。
 - `data_upload.py`：读取 `wiki_inventory.db`，把待上传页面推到 wiki。
 - `image_upload.py`：读取 `image_inventory.db`，上传图标文件。
 - `image_redirect.py`：读取 `image_inventory.db`，创建 `File:` 图片重定向页。
@@ -72,6 +73,12 @@ MOD_VERSION=1.0.0
 - 保留目录 `KEEP_ONLINE_DIRS`（`wiki_inventory.py` 中写死）：工具链不生成、但线上需要保留的目录。目前为空。
 - 本地整个目录都不存在（例如某个拆分任务因缺输入而跳过）。确实要移除整个目录时用
   `python wiki_inventory.py --delete-dir <目录名>` 点名。
+
+平台保存 JSON 数据页时会把对象键里的 `.` 和 `$` 改成全角的 `．`（U+FF0E）和 `＄`（U+FF04）
+（MongoDB 字段名不能含这两个字符；`模块:Database` 查询时也按同样规则转换）。
+工具链在 `platform_json.py` 中提前做同样的转换：`data_upload.py` 上传的是转换后的文本，
+`page_hash.py` 对 `.json` 文件按转换后的内容计算哈希，所以本地文件、上传内容与线上源码一致，
+不会因为这个改写把没改动的页面当成差异。只改键，值和排版原样保留；本地文件仍保持原样（含 `.`）。
 
 ### 只处理一部分数据
 
@@ -251,6 +258,115 @@ wikitext/Data/Versions/<远端模组名>/<版本>/
 
 缺少汉化时保留原文并打印缺失键。
 源任务书中指向缺失任务的引用会保留并警告。重复 ID、无效 JSON、任务线顺序不一致等错误会阻止写入。
+
+## GuideNH
+
+`python split_all.py guidenh` 把 [GTNH-Guide-Pack](https://github.com/GTNewHorizons/GTNH-Guide-Pack)（GuideNH 的内容包；GuideNH 是面向 Minecraft 1.7.10 的游戏内指南框架）里的**中文**指南转成维基页面，默认全流程会执行。
+只有 `MOD_LOCAL_NAME=GTNH` 处理；没有配置内容包仓库时跳过。内容包采用 CC BY-NC-SA 4.0，每页页首都带来源、版本和许可说明。
+
+### 配置（`.env`）
+
+| 配置项 | 含义 |
+|---|---|
+| `GUIDENH_REPO` | 内容包仓库链接。首次运行克隆到 `databaseDump/source_state/GuideNH/repo`，之后每次运行 `fetch` 并快进更新。仓库含约 200 MB 的 Git LFS 文件，需要安装 git-lfs |
+| `GUIDENH_REF` | 可选，分支或标签；不填跟随默认分支 |
+| `GUIDENH_DIR` | 可选，改用已有的本地克隆（只读取，不克隆也不拉取；设置后忽略 `GUIDENH_REPO`） |
+| `GUIDENH_NAMESPACE`、`GUIDENH_PAGE_PREFIX` | 可选，页面所在的命名空间和前缀，默认 `指南` 与 `GuideNH` |
+| `GUIDENH_SITE_URL` | 可选，官方网页版的站点根地址，默认 `https://www.gtnewhorizons.com/GTNH-Guide-Pack`；页面里的链接是 `<根>/guides/<模组>/guidenh/zh_cn/<页面>.html` |
+
+转换需要 PyYAML（`python -m pip install PyYAML`）；缺少时任务会提示并跳过，不会中断默认流程。
+
+### 做什么
+
+1. 同步内容包仓库，读取 `assets/<模组>/guidenh/_zh_cn/**/*.md`（`templates/` 下的页面模板不单独成页）。
+2. 转换成 `wikitext/指南/GuideNH/<模组>/<页面路径>.wikitext`，对应维基页面 `指南:GuideNH/<模组>/<页面路径>`，另生成总览页 `指南:GuideNH/总览`。
+   页面里的物品 ID（`modid:name:meta`）对照本版本已拆分的 `Items`（还没有时用 `DUMPS_DIR` 的 `advitempanel.json`）解析成物品 key；
+   带 NBT 的写法按 SNBT 内容（与字段顺序无关）匹配 `Items` 里的哈希后缀 key，匹配不上则用该物品不带 NBT 的版本。
+   页面标题是路径，所以用 `{{DISPLAYTITLE:指南:GuideNH/正文标题}}` 显示正文开头的一级标题（没有一级标题的页面回退到侧栏的 `navigation.title`），并去掉正文里重复的那个标题。导航框、上级路径和子页面列表的页面名也用同一个标题，侧栏标题（可能很长）只作回退。
+3. 3D 场景（`<GameScene>`）使用仓库里 `website-export.zip`（官方静态站的导出）预渲染的静态预览图，按场景在页面中出现的顺序对应；不做交互式 3D。
+   每张预览图的说明里和页首说明框里都带本页的官方网页版链接（可以旋转查看场景）。
+4. 页面用到的图片放进 `source_state/GuideNH/images/`，写出上传计划 `image-plan.json`。
+5. 写出转换报告 `source_state/GuideNH/guidenh-report.json`：未能解析的物品、坏链接、未识别的处理器、不支持的标签、场景数量对不上的页面，
+   以及“md 在静态站导出之后改过、场景预览可能偏旧”的页面。
+
+不要手工在 `指南:GuideNH/` 前缀下建页面：`wiki_inventory.py` 会把线上该前缀下本地没有的页面列为待删除（和数据页一样，本地整个目录缺失时只记为 `kept_online`，要删除用 `--delete-dir GuideNH` 点名）。
+修正内容请到内容包仓库提交，维基上的页面是生成的副本。
+
+### 页面模板与导航框
+
+生成的页面只调用维基模板、传参数，文字和版式放在模板里，以后微调直接改模板，不需要重新生成页面。模板在编辑仓库的 `wikitext/模板/` 下，随常规编辑流程维护：
+
+| 模板 | 用途 |
+|---|---|
+| `{{GuideNH页首}}` | 页首：上级页面导航、来源与许可说明、官方网页版链接、作者与日期，并加入分类“GuideNH” |
+| `{{GuideNH关联物品}}` | 页首声明框后面的“关联物品”：`blockquote` 加 `{{Columns}}` 的多列无序列表，不单独成章节 |
+| `{{GuideNH场景}}` | 3D 场景的静态预览图（基于 `{{Thumb}}`），说明里指向官方网页版 |
+| `{{GuideNH导航}}` | 页面底部的导航框，数据来自 `模块:Navbox/GuideNH/<模组>` |
+
+导航框数据 `模块:Navbox/GuideNH/<模组>`（写法见 `Project:沙盒/navbox`）由任务按内容包的导航树生成，写到 `wikitext/Module/Navbox/GuideNH/`，
+和页面一样纳入清单：本地不再生成的，线上对应的模块会被列为待删除。只有多个页面的内容包才生成导航框。
+页首的“关联物品”取自页面表头的 `item_ids`（找不到的物品记入报告并跳过）。
+
+### 物品与指南页面的关联（guidenhPages）
+
+`split_all.py items`（只在 `MOD_LOCAL_NAME=GTNH` 时）会给物品记录加 `guidenhPages`：页面表头 `item_ids`（以及 `item_id`）声明的关联页面，
+**只记页面后缀**（如 `gregtech/multiblocks/hv/cleanroom`），前缀 `指南:GuideNH/` 由维基端的 Lua 拼接；没有关联则没有该字段。
+写法同物品 key：meta 为 0 时省略，带 NBT 的写法忽略 NBT（关联到该注册物品的全部变体），meta 写 `*` 或 `32767` 表示全部 meta；
+页面按导航 `position` 从大到小排列。条目模块（`模块:条目/数据源`、`属性接口`、`类型`）据此在信息框的“GuideNH”行（位于“英文维基”与“源代码”之间）显示链接，
+链接文字取该页开头 `{{DISPLAYTITLE:…}}` 声明的标题。这个字段会改动大部分 `Items` 分桶页，上传 Items 是正常的数据页上传，但数据量大。
+
+### 页面上传
+
+指南页面和数据页走同一条流程，不需要额外步骤：
+
+```bash
+python split_all.py                      # 默认全流程，包含 guidenh
+python wiki_inventory.py
+python data_upload.py                    # 数据页与指南页面；机器人账号，编辑摘要为“机器人：同步 GuideNH”
+python data_upload.py --only GuideNH     # 只处理指南页面
+```
+
+`--only` 后写 `GuideNH`（大小写不限）只选指南页面，写版本目录名（如 `Quests`）则不含指南页面。内容哈希不变的页面不会重传。
+
+### 图片上传（只在明确要求上传图片时运行）
+
+指南图片是第三种图片种类，沿用图片上传的全部规矩（`image_check.py`）：本地 sha1 与线上相同不传，状态记在 `source_state/GuideNH/image_inventory.db`，重跑不会重传。
+
+```bash
+python image_inventory.py --kind guidenh
+python image_upload.py --kind guidenh
+```
+
+文件名：页面图片为 `GuideNH_<模组>_<路径>.png`，场景预览为 `GuideNH_scene_<内容哈希前 16 位>.png`；场景预览由内容决定文件名，
+内容变了是新文件，不会覆盖线上旧图。没有中文别名重定向，`image_redirect.py --kind guidenh` 无事可做。
+
+### 转换规则
+
+| GuideNH 写法 | 维基 |
+|---|---|
+| Markdown 标题、列表、粗斜体、删除线、表格、围栏代码、引用 | 对应的维基文本；`> [!NOTE]` 等提示块用 `{{Mbox}}`；围栏代码用 `<pre>` |
+| `<ItemLink>`、`<ItemImage>`、`<BlockImage>` | `<span class="db-item">@key</span>`、`db-icon`（`{{DatabaseWrapper}}` 统一换成 `{{Item}}`、`{{Icon}}`）；紧跟的同一物品图标合并；方块 3D 小图改用物品图标 |
+| `<RecipeFor>`、`<RecipesFor>`、`<Recipe>`、`<RecipesUsage>` | `<span class="db-recipe" data-output="@key">`（即 `{{Recipe}}`）；配方类型按处理器名对应到维基类型，认不出的不填 |
+| 连续的单独图标（整段只有 `<ItemImage>`、`<BlockImage>`；一个 `<Row>` 里的多个图标也合并） | 一个 `{{IconList}}` 的连续参数（整页包装时写 `<span class="db-icon-list">`），不是一个图标一个框 |
+| `<Color>` | 带颜色的 `<span>`；游戏里为深色背景挑的亮色换成白底能读的同色系 |
+| `<GameScene>`（及其子标签） | `{{GuideNH场景}}`（静态预览图），位置按 `align` |
+| `<FloatingImage>`、图片 | `{{Thumb}}`、`[[File:…]]`，宽度不超过原图 |
+| `<Row>`、`<Column>` | `display:flex` 的 `<div>`、带浮动的 `<div>` |
+| `<ContentTabs>` / `<Tab>` | `<tabber>`（内部用普通 `{{Item}}`、`{{Recipe}}` 模板） |
+| `<SubPages>`、`<Category>` | 转换时按导航树、`categories` 表头生成的链接列表 |
+| 页面链接 `x.md#锚点`、`modid:path.md` | `[[指南:GuideNH/模组/页面#标题文字|文字]]`，找不到目标时只保留文字并记入报告 |
+| `<Latex>`、`$$公式$$` | MathJax：行内写 `$…$`，独占一段写 `$$…$$`，公式外包 `<nowiki>` 防止维基语法和模板参数分隔吞掉；有公式的页面顶部加 `{{#html:MathJax3}}`（和维基其他页面一致）。`<math>` 在这个维基上不可用 |
+| 函数图、思维导图等交互内容 | `{{Mbox}}` 提示，请在游戏中查看 |
+
+整页正文包在 `{{DatabaseWrapper|html=…}}` 里：物品与图标共用一次数据库查询，配方为配方数加 4 次，
+避免大页面超过每页 100 次高开销函数的限制（未包装时 `nac` 页要 192 次并出现 Lua 错误，包装后 2 次）。
+包在模板参数里的正文不能出现裸竖线，所以表格输出为 HTML 表格；`<tabber>` 的内容不经过包装器，里面改用普通模板。
+
+### 已知限制
+
+- 没有 3D 交互，也不渲染结构投影；场景预览取自静态站导出，之后改过的场景需要更新内容包里的 `website-export.zip`。
+- `<RecipesFor>` 等没有给出处理器时不填配方类型，查询是否命中取决于数据库；页面里没有数据库记录的物品（新版本加入的、NBT 变体对不上的）按 `<code>ID</code>` 保留并记入报告。
+- 任务书绑定（`bindings`）、`item_ids` 等表头只用于导航，没有写入页面。
 
 ## 配方输入与输出归类
 

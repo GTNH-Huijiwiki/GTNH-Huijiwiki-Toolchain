@@ -26,6 +26,7 @@ import urllib.request
 import urllib.parse
 import http.cookiejar
 
+import guidenh_scope as gscope
 from data_version import in_scope, require_scope, version_module_title, version_tag
 from page_hash import file_sha1
 
@@ -112,6 +113,8 @@ def path_to_title(rel_path: str) -> str:
     if len(parts) == 2:
         if parts[0] == "Module":
             parts[1] = parts[1].removesuffix(".lua")
+        elif parts[0] == gscope.namespace():
+            parts[1] = parts[1].removesuffix(gscope.PAGE_SUFFIX)  # GuideNH 页面
         return parts[0] + ":" + parts[1]
     return "0:" + parts[0]
 
@@ -197,10 +200,9 @@ def scan_local_files() -> dict[str, tuple[float, int]]:
     """扫描当前版本的数据页与配置模块，返回 {rel_path: (mtime, size)}。"""
     files = {}
     scan_root = os.path.join(WIKITEXT_DIR, title_to_path(WIKI_PREFIX).replace("/", os.sep))
+    wikitext_abs = os.path.abspath(WIKITEXT_DIR)
     if not os.path.isdir(scan_root):
         print(f"  Directory not found: {scan_root}")
-        return files
-    wikitext_abs = os.path.abspath(WIKITEXT_DIR)
     for root, dirs, names in os.walk(scan_root):
         for name in names:
             abs_path = os.path.join(root, name)
@@ -213,6 +215,19 @@ def scan_local_files() -> dict[str, tuple[float, int]]:
     if os.path.isfile(config_abs):
         stat = os.stat(config_abs)
         files[config_path] = (stat.st_mtime, stat.st_size)
+
+    # GuideNH 页面（split_all.py guidenh 生成），只属于本体流程；数据目录缺失时也要扫描。
+    if gscope.enabled():
+        for root, dirs, names in os.walk(gscope.local_pages_directory(WIKITEXT_DIR)):
+            for name in names:
+                if name.endswith(gscope.PAGE_SUFFIX):
+                    abs_path = os.path.join(root, name)
+                    stat = os.stat(abs_path)
+                    files[os.path.relpath(abs_path, wikitext_abs).replace("\\", "/")] = (stat.st_mtime, stat.st_size)
+        for single in (gscope.local_landing_path(WIKITEXT_DIR), gscope.local_module_path(WIKITEXT_DIR)):
+            if single.is_file():  # 总览页和导航框数据模块各只有一个文件
+                stat = single.stat()
+                files[os.path.relpath(single, wikitext_abs).replace("\\", "/")] = (stat.st_mtime, stat.st_size)
     return files
 
 
@@ -229,6 +244,8 @@ def canonical_title(title: str) -> str:
 def top_directory(title: str) -> str:
     """版本目录下的第一级目录名（如 Recipes）；配置模块等不在版本目录内的返回空串。"""
     canonical, prefix = canonical_title(title), canonical_title(WIKI_PREFIX)
+    if gscope.is_guidenh_title(title):
+        return gscope.top_directory()
     if not canonical.startswith(prefix):
         return ""
     rest = canonical[len(prefix):]
@@ -250,7 +267,39 @@ def fetch_wiki_titles() -> set[str]:
         if "continue" not in r:
             break
         params.update(r["continue"])
+    if gscope.enabled():
+        titles |= fetch_guidenh_titles()
     print(f"  Fetched {len(titles):,} titles")
+    return titles
+
+
+def namespace_id(name: str) -> int:
+    """按名称查命名空间 ID（如 指南 → 16）。"""
+    r = _get({"action": "query", "meta": "siteinfo", "siprop": "namespaces", "format": "json"})
+    for entry in r["query"]["namespaces"].values():
+        if name in (entry.get("*"), entry.get("canonical")):
+            return entry["id"]
+    raise ValueError(f"线上没有命名空间: {name}")
+
+
+def fetch_guidenh_titles() -> set[str]:
+    """线上 GuideNH 前缀下的全部页面，以及导航框数据模块（标题统一成与本地一致的 Module: 写法）。"""
+    titles = set()
+    for namespace, prefix in ((gscope.namespace(), gscope.page_prefix()),
+                              (gscope.MODULE_NAMESPACE, gscope.module_title().partition(":")[2])):
+        params = {"action": "query", "list": "allpages", "apnamespace": namespace_id(namespace),
+                  "apprefix": prefix, "aplimit": "max", "format": "json"}
+        while True:
+            r = _get(params)
+            for p in r["query"]["allpages"]:
+                title = p["title"]
+                if namespace == gscope.MODULE_NAMESPACE:
+                    title = gscope.MODULE_NAMESPACE + ":" + title.partition(":")[2]
+                if gscope.is_guidenh_title(title):
+                    titles.add(title)
+            if "continue" not in r:
+                break
+            params.update(r["continue"])
     return titles
 
 
