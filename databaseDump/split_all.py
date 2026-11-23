@@ -1037,9 +1037,23 @@ def _load_achievements():
     return prepare_achievements(json.loads(path.read_text(encoding="utf-8")))
 
 
+def _attach_guide_pages(items):
+    """GuideNH：页面表头 item_ids 声明的关联 → 物品的 guidenhPages（页面后缀），见 guidenh.py。"""
+    try:
+        import yaml  # noqa: F401
+        import guidenh
+    except ImportError:
+        print("  [Links] 跳过指南关联：需要 PyYAML（python -m pip install PyYAML）")
+        return
+    index = guidenh.item_page_index()
+    if index:
+        print(f"  [Links] {guidenh.attach_guide_pages(items, index):,} items carry guidenhPages")
+
+
 def _attach_item_links(items):
     if local_mod_name() != "GTNH":
         return
+    _attach_guide_pages(items)
     research_index, quest_index = {}, {}
     thaumonomicon = Path(DUMPS_DIR) / "tc4thaumonomicon.json"
     if thaumonomicon.is_file() and thaumonomicon.stat().st_size:
@@ -2443,6 +2457,20 @@ def do_clean(debug: bool):
         print(f"Not found: {VERSION}")
 
 
+def do_guidenh(debug: bool):
+    """GuideNH：把内容包仓库里的中文指南转成 指南:GuideNH/ 下的页面（见 guidenh.py）。"""
+    print("=" * 50)
+    print("[GuideNH]")
+    print("=" * 50)
+    try:
+        import yaml  # noqa: F401  guidenh 读取页面表头需要 PyYAML
+    except ImportError:
+        print("  跳过：需要 PyYAML（python -m pip install PyYAML）")
+        return
+    import guidenh
+    guidenh.run(DUMPS_DIR, os.path.join(_PROJECT_ROOT, "wikitext"), debug)
+
+
 TASKS = {
     "items":      ("Items",        do_items),
     "fluids":     ("Fluids",       do_fluids),
@@ -2456,6 +2484,7 @@ TASKS = {
     "biomes":     ("Biomes",       do_biomes),
     "achievements": ("Achievements", do_achievements),
     "entities":   ("Entities",     do_entities),
+    "guidenh":    ("GuideNH",      do_guidenh),
 }
 
 STANDALONE_TASKS = {

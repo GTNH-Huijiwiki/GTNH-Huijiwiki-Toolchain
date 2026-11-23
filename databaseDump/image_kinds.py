@@ -1,4 +1,4 @@
-"""图片上传任务的种类：物品图片（items）与实体图片（entities）。
+"""图片上传任务的种类：物品图片（items）、实体图片（entities）与 GuideNH 图片（guidenh）。
 
 image_inventory.py、image_upload.py、image_redirect.py 用 --kind 选择种类，默认 items：
 
@@ -8,8 +8,12 @@ image_inventory.py、image_upload.py、image_redirect.py 用 --kind 选择种类
   全身照 ``Entity <注册名>.png`` 与像素头像 ``EntityHead <注册名>.png`` 都上传；
   中文别名 ``<实体中文名>.png`` 重定向到头像。状态记在
   source_state/<模组>/<版本>/entity_image_inventory.db。
+- guidenh：split_all.py guidenh 放进 source_state/GuideNH/images/ 的图片（指南页面里的图，
+  以及官方静态站预渲染的 3D 场景静态图），上传计划在 image-plan.json，没有中文别名；
+  状态记在 source_state/GuideNH/image_inventory.db。文件名由内容决定的场景图换了内容就是新文件名，
+  不会覆盖线上旧图。
 
-两种图片共用同一套判定（见 image_check.py）：线上文件与本地字节相同或视觉规则判定相同时不再上传，
+几种图片共用同一套判定（见 image_check.py）：线上文件与本地字节相同或视觉规则判定相同时不再上传，
 重跑时按状态库与文件 sha1 缓存跳过已上传的图片。
 """
 
@@ -20,8 +24,8 @@ from pathlib import Path
 
 from data_version import local_mod_name, source_directory, version_tag
 
-KINDS = ('items', 'entities')
-LABELS = {'items': '物品图片', 'entities': '实体图片'}
+KINDS = ('items', 'entities', 'guidenh')
+LABELS = {'items': '物品图片', 'entities': '实体图片', 'guidenh': 'GuideNH 图片'}
 
 
 def kind_from_argv(argv=None) -> str:
@@ -43,6 +47,10 @@ def kind_paths(kind: str, script_dir: str) -> tuple[str, str, str, str | None]:
     from image_version import image_paths
     if kind == 'items':
         return image_paths(script_dir)
+    if kind == 'guidenh':
+        import guidenh_scope
+        return (str(guidenh_scope.state_directory()), str(guidenh_scope.image_database()),
+                str(guidenh_scope.images_directory()), None)
     _, version = version_tag(required=True).split('/')
     mod = local_mod_name(required=True)
     source = source_directory(os.environ.get('DUMPS_DIR', ''), mod, check_exists=False)
@@ -54,16 +62,36 @@ def kind_plan(kind: str, source: str, resolved_csv: str | None) -> dict:
     if kind == 'items':
         from image_plan import prepare_plan
         return prepare_plan(source, resolved_csv)
+    if kind == 'guidenh':
+        return guidenh_plan()
     return entity_plan(source)
+
+
+def guidenh_plan() -> dict:
+    """GuideNH 图片计划：split_all.py guidenh 写出的 image-plan.json，没有重定向。"""
+    import guidenh_scope
+    path = guidenh_scope.image_plan_path()
+    if not path.is_file():
+        raise ValueError(f'缺少 GuideNH 图片计划: {path}（请先运行 split_all.py guidenh）')
+    plan = json.loads(path.read_text('utf-8'))
+    missing = [name for name in plan['uploadIcons'] if not (guidenh_scope.images_directory() / name).is_file()]
+    if missing:
+        raise ValueError(f'计划中的图片缺失: {missing[:5]}（请重新运行 split_all.py guidenh）')
+    print(f"Guide image plan: {len(plan['uploadIcons']):,} files")
+    return {'schemaVersion': 1, 'uploadIcons': plan['uploadIcons'], 'redirects': {}}
 
 
 def kind_exempt(kind: str, source: str) -> dict[str, str]:
     """免更新名单与 config/image_unstable.json 共用；实体图片的文件名不与物品图标重叠。"""
+    if kind == 'guidenh':
+        return {}  # 指南图片不是游戏渲染的物品图标，没有动图或渲染波动
     from image_check import exempt_icons
     return exempt_icons(source)
 
 
 def kind_unstable(kind: str) -> set[str]:
+    if kind == 'guidenh':
+        return set()
     from image_check import unstable_icons
     return unstable_icons()
 

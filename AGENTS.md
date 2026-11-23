@@ -51,4 +51,7 @@
 - 说用工具链“上传”，默认只指数据页：`wiki_inventory.py` + `data_upload.py`。**不含图片**。
 - 只有用户明确说“上传图片”，才运行 `image_upload.py`（以及与图片相关的 `image_redirect.py`）。
 - 即使用户说“全量上传”“全部上传”，也要先向用户确认是否包含图片，得到明确答复后才动图片。
+- GuideNH 页面属于“数据页”：`split_all.py`（默认全流程含 `guidenh` 任务）→ `wiki_inventory.py` → `data_upload.py` 会一起处理，
+  `data_upload.py --only GuideNH` 只处理它们。指南的图片是 `--kind guidenh`，按“上传图片”的规矩，用户明确说了才运行 `image_upload.py --kind guidenh`。
+  `指南:GuideNH/` 前缀下的页面全部由任务生成，线上多余的会被列为待删除，不要在这个前缀下手工建页面。
 - `image_inventory.py` 只读线上、不写线上，可以在核对时运行；它会改写仓库跟踪的 `databaseDump/image_inventory.db`，是否提交仍听用户安排。
