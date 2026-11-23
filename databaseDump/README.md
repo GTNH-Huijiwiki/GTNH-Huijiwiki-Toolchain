@@ -301,10 +301,13 @@ wikitext/Data/Versions/<远端模组名>/<版本>/
 | `{{GuideNH页首}}` | 页首：上级页面导航、来源与许可说明、官方网页版链接、作者与日期，并加入分类“GuideNH” |
 | `{{GuideNH关联物品}}` | 页首声明框后面的“关联物品”：`blockquote` 加 `{{Columns}}` 的多列无序列表，不单独成章节 |
 | `{{GuideNH场景}}` | 3D 场景的静态预览图（基于 `{{Thumb}}`），说明里指向官方网页版 |
-| `{{GuideNH导航}}` | 页面底部的导航框，数据来自 `模块:Navbox/GuideNH/<模组>` |
+| `{{GuideNH导航}}` | 页面底部的导航框，数据来自 `模块:Navbox/GuideNH` |
 
-导航框数据 `模块:Navbox/GuideNH/<模组>`（写法见 `Project:沙盒/navbox`）由任务按内容包的导航树生成，写到 `wikitext/Module/Navbox/GuideNH/`，
-和页面一样纳入清单：本地不再生成的，线上对应的模块会被列为待删除。只有多个页面的内容包才生成导航框。
+导航框数据 `模块:Navbox/GuideNH`（写法见 `Project:沙盒/navbox`）是整个 GuideNH 共用的一个模块，由任务按内容包的导航树生成，
+写到 `wikitext/Module/Navbox/GuideNH.lua`，和页面一样纳入清单：本地不再生成的旧模块（含早期按内容包拆分的 `GuideNH/<模组>`），线上会被列为待删除。
+每个内容包是一个顶层分组，其下按导航树分组；兄弟页面的顺序与游戏里一致（`navigation.position` 大的在前，同值按侧栏标题 `navigation.title`），
+子页面列表、总览页的列表同样如此。页面的 `navigation.icon`（物品 ID）能解析到有静态图标的物品时，导航框项目带这个图标
+（取自 Items 的 `iconName`；动画图标和解析不到的不带）；有子页面的页面成为分组，分组第一项“总览”是页面自己，带它的图标。
 页首的“关联物品”取自页面表头的 `item_ids`（找不到的物品记入报告并跳过）。
 
 ### 物品与指南页面的关联（guidenhPages）
