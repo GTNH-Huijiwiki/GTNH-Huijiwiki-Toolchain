@@ -5,13 +5,16 @@ data_upload.py
 当前版本的数据页全部完成后，再上传对应的版本配置模块。
 
 用法:
-    python data_upload.py                   # 全部上传（8 线程）
+    python data_upload.py                   # 全部上传（默认 4 线程）
     python data_upload.py --debug           # 前 20 个文件
-    python data_upload.py -t 16             # 16 线程
+    python data_upload.py -t 2              # 2 线程
     python data_upload.py --no-delete       # 只上传，不执行删除
     python data_upload.py --only Thaumonomicon gtnhdimension   # 只处理版本目录下这些第一级目录
 
 上传全部成功后，再删除 wiki_inventory.py 列出的 pending_delete 页面。
+
+站点按时间窗口限制编辑频率（API 错误 ratelimited，提示“anti-abuse”）。命中后所有线程一起暂停
+UPLOAD_RATE_LIMIT_WAIT 秒（默认 120），再重试同一个页面，最多 5 次；仍然限速才记为失败，留待下次运行。
 """
 
 import os
@@ -23,6 +26,7 @@ import signal
 import sqlite3
 from contextlib import closing
 import threading
+import time
 import urllib.request
 import urllib.parse
 import http.cookiejar
@@ -72,6 +76,51 @@ PASSWORD = os.environ.get("BOT_PASSWORD", "")
 WIKI_PREFIX = "Data:Versions/" + version_tag() + "/"
 
 _stop = threading.Event()
+
+DEFAULT_THREADS = 4
+# 站点限速后所有线程一起等一会儿再重试，别继续硬撞（失败的请求也会占用限速窗口）。
+RATE_LIMIT_WAIT = float(os.environ.get("UPLOAD_RATE_LIMIT_WAIT", "120"))
+RATE_LIMIT_RETRIES = 5
+_pause_lock = threading.Lock()
+_pause_until = 0.0
+
+
+class RateLimitedError(RuntimeError):
+    """API 返回 ratelimited（反滥用限速）；稍后重试通常能成功。"""
+
+
+def is_rate_limited(code, message) -> bool:
+    """按错误代码判断，提示文字（可能随站点语言变化）作为补充。"""
+    return code == "ratelimited" or "anti-abuse" in (message or "").lower()
+
+
+def _wait_while_paused():
+    while not _stop.is_set():
+        with _pause_lock:
+            remaining = _pause_until - time.monotonic()
+        if remaining <= 0:
+            return
+        _stop.wait(min(remaining, 1.0))
+
+
+def call_with_backoff(action, label: str):
+    """执行 action；遇到限速就让所有线程暂停后重试同一件事，其他错误原样抛出。"""
+    global _pause_until
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        _wait_while_paused()
+        if _stop.is_set():
+            raise RuntimeError("已中断")
+        try:
+            return action()
+        except RateLimitedError:
+            if attempt == RATE_LIMIT_RETRIES:
+                raise
+            with _pause_lock:
+                _pause_until = max(_pause_until, time.monotonic() + RATE_LIMIT_WAIT)
+            print(f"  被限速：所有线程暂停 {RATE_LIMIT_WAIT:.0f} 秒后重试 {label}"
+                  f"（{attempt + 1}/{RATE_LIMIT_RETRIES}）")
+
+
 GUIDENH_SUMMARY = "机器人：同步 GuideNH（GTNH-Guide-Pack）"
 
 
@@ -202,6 +251,8 @@ def edit_page(opener, title: str, text: str, summary: str = "", bot: bool = True
                 r2 = _get(opener, {"action": "query", "meta": "tokens", "format": "json"})
                 params["token"] = r2["query"]["tokens"]["csrftoken"]
                 continue
+            if is_rate_limited(r["error"].get("code"), err):
+                raise RateLimitedError(err)
             raise RuntimeError(err)
         return r["edit"]
 
@@ -233,6 +284,8 @@ def delete_page(opener, title: str, reason: str = "", bot: bool = True) -> dict:
                 r2 = _get(opener, {"action": "query", "meta": "tokens", "format": "json"})
                 params["token"] = r2["query"]["tokens"]["csrftoken"]
                 continue
+            if is_rate_limited(r["error"].get("code"), err):
+                raise RateLimitedError(err)
             raise RuntimeError(err)
         return r
 
@@ -245,7 +298,8 @@ def delete_worker(titles: list[str], total: int, counters: dict, lock: threading
         if _stop.is_set():
             return
         try:
-            delete_page(opener, title, reason="机器人：批量清理旧数据", bot=True)
+            call_with_backoff(
+                lambda: delete_page(opener, title, reason="机器人：批量清理旧数据", bot=True), title)
             mark_delete_done(title)
             status, msg = "OK", ""
         except Exception as e:
@@ -277,8 +331,9 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
                 text = f.read()
             # 平台会把 JSON 键里的 . 和 $ 改成全角；先转换，上传内容才和线上保存的、清单里的哈希一致
             text = normalize_page(text, abs_path)
-            result = edit_page(opener, title, text,
-                               summary=GUIDENH_SUMMARY if is_guidenh(title) else "机器人：批量上传数据", bot=True)
+            summary = GUIDENH_SUMMARY if is_guidenh(title) else "机器人：批量上传数据"
+            result = call_with_backoff(
+                lambda: edit_page(opener, title, text, summary=summary, bot=True), title)
             if "nochange" in result:
                 status, msg = "SKIP", ""
             else:
@@ -331,7 +386,7 @@ def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     only = only_directories(args)
     debug = "--debug" in args
-    threads = 8
+    threads = DEFAULT_THREADS
     failures = 0
     _stop.clear()
 
