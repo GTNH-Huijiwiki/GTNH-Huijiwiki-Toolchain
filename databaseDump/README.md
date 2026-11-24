@@ -301,7 +301,8 @@ wikitext/Data/Versions/<远端模组名>/<版本>/
 | `{{GuideNH页首}}` | 页首：上级页面导航、来源与许可说明、官方网页版链接、作者与日期，并加入分类“GuideNH” |
 | `{{GuideNH关联物品}}` | 页首声明框后面的“关联物品”：`blockquote` 加 `{{Columns}}` 的多列无序列表，不单独成章节 |
 | `{{GuideNH场景}}` | 3D 场景的静态预览图（基于 `{{Thumb}}`），说明里指向官方网页版 |
-| `{{GuideNH导航}}` | 页面底部的导航框，数据来自 `模块:Navbox/GuideNH` |
+| `{{GuideNH异步导航}}` | 页面底部的导航框：用站点通用的 `async-load-container` 在浏览器里异步加载 `{{GuideNH导航}}`（与条目模板的导航相同）。导航框带数百个物品图标，直接嵌入时每次解析要多花二十多秒，所以页面不直接写 `{{GuideNH导航}}` |
+| `{{GuideNH导航}}` | 导航框本体，数据来自 `模块:Navbox/GuideNH`；只由异步加载器调用 |
 
 导航框数据 `模块:Navbox/GuideNH`（写法见 `Project:沙盒/navbox`）是整个 GuideNH 共用的一个模块，由任务按内容包的导航树生成，
 写到 `wikitext/Module/Navbox/GuideNH.lua`，和页面一样纳入清单：本地不再生成的旧模块（含早期按内容包拆分的 `GuideNH/<模组>`），线上会被列为待删除。

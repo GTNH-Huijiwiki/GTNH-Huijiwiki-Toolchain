@@ -503,7 +503,7 @@ def landing_page(site, commit) -> str:
              f'[{UPSTREAM_URL} GTNH-Guide-Pack]（版本 {commit}）的中文页面；页面由机器人生成，请勿直接编辑。',
              f'内容采用 [{LICENSE_URL} CC BY-NC-SA 4.0] 许可；发现问题请到内容包仓库提交修改。', '']
     lines += [f'* [[{p.wiki_title}|{p.title_text}]]（{p.mod}）' for p in roots]
-    lines += ['', '== 导航 ==', '{{GuideNH导航}}', '', '[[分类:GuideNH]]']
+    lines += ['', '== 导航 ==', '{{GuideNH异步导航}}', '', '[[分类:GuideNH]]']
     return '\n'.join(lines) + '\n'
 
 
@@ -552,7 +552,7 @@ def convert_page(site, page, items, zip_file, staging, used_scene_images, commit
     # 有公式的页面加载 MathJax（维基其他页面的写法），公式在正文里写成 $…$ 与 $$…$$
     mathjax = '{{#html:MathJax3}}\n' if context.has_formula else ''
     # 分类在 {{GuideNH页首}} 里；导航框放在自己的“导航”章节（条目页同样放在页尾）
-    footer = chr(10) * 2 + '== 导航 ==' + chr(10) + '{{GuideNH导航}}'
+    footer = chr(10) * 2 + '== 导航 ==' + chr(10) + '{{GuideNH异步导航}}'
     return display_title_line(display_title) + mathjax + header(site, page, commit) + '\n\n' + wrapped + footer + '\n'
 
 
