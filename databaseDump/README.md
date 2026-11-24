@@ -430,7 +430,7 @@ Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数�
   要比较 `imageinfo.url` 末尾的文件名和标题自己的文件名，相同才是自己的文件。`image_files.py` 实现了这个判断，分五类：
   `free`（页面不存在）、`own_file`（自己的文件）、`broken`（自己的文件，页面文本却是 `#REDIRECT`，重定向没生效）、
   `redirect`（重定向页，已生效或目标没有文件）、`plain_page`（只剩描述页）。
-- `image_redirect.py`：创建前先查标题，`own_file`/`broken` 默认跳过并汇总为 `CONFLICT`，加 `--delete-existing` 才先删后建。
+- `image_redirect.py`：创建前先查标题，`own_file`/`broken` 默认跳过并汇总为 `CONFLICT`，加 `--delete-existing` 才处理：先删除文件页（连同文件），再只恢复页面文字的各个修订、文件保持删除，最后（文本不对才）写重定向。这样页面 ID 和修订历史保持不变，页面上能看到 delete/undelete 日志。每个标题 3 次请求（删除、列出已删修订、恢复）。
 - `image_upload.py`：上传前先查标题，`redirect`/`broken` 默认跳过并汇总为 `CONFLICT`，加 `--delete-existing` 才先删后传。
 - `image_audit.py`：只读，不登录；上传名字和重定向标题各按类别汇总，`--output` 写出每个类别的清单。
 - `image_redirect.py --recheck`：不看状态库的“已上传”记录，按线上实际状态核对计划里的全部重定向：已生效且目标对的跳过，

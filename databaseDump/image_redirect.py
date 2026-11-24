@@ -201,6 +201,7 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
     """线程：独立 jar + 独立 CSRF，完成一条立刻写 DB。每 50 条先查一次这些标题的线上状态。"""
     opener = make_opener_with_jar(clone_jar(master_jar))
     csrf = fetch_csrf(opener)
+    token_box = {"csrf": csrf}
 
     def post(params):
         return _post_form(opener, params)
@@ -241,8 +242,14 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
                     if not delete_existing:
                         report("CONFLICT", from_title, to_title, "这个名字下已有自己的文件，写重定向不会生效；加 --delete-existing 先删再建")
                         continue
-                    image_files.delete_page(post, get, from_title, "机器人：这个名字要改成重定向，先删除原文件页", _stop)
+                    restored_text = image_files.delete_keep_history(
+                        post, get, from_title, "机器人：这个名字要改成重定向，先删除原文件页", token_box, _stop)
                     counters["DELETED"] = counters.get("DELETED", 0) + 1
+                    if restored_text is not None and restored_text.strip() == f"#REDIRECT [[{to_title}]]":
+                        # 恢复出来的最新文本已经是要写的重定向，不用再编辑。
+                        mark_redirect_done(from_title, icon_name)
+                        report("OK", from_title, to_title, "删除后恢复历史，文本已是目标")
+                        continue
 
                 def edit():
                     nonlocal csrf

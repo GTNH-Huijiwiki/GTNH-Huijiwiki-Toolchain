@@ -147,3 +147,48 @@ def delete_page(post, get, title: str, reason: str, stop: threading.Event | None
         return True
 
     return call_with_backoff(run, f"删除 {title}", stop)
+
+
+def delete_keep_history(post, get, title: str, reason: str, token_box: dict,
+                        stop: threading.Event | None = None) -> str | None:
+    """删除文件页（连同文件），再只恢复页面文字的各个修订，文件保持删除。
+
+    恢复后页面保持原来的页面 ID 和修订历史，页面上能看到 delete 和 undelete 日志，而且名字下不再有自己的文件，
+    所以重定向可以生效。返回恢复出来的最新文本（用来判断是否还需要再编辑一次），页面原本不存在则返回 None。
+    token_box 是每个线程自己的 {"csrf": ...}，令牌复用，失效时自动刷新。
+    """
+    def token():
+        if not token_box.get("csrf"):
+            token_box["csrf"] = get({"action": "query", "meta": "tokens", "format": "json"})["query"]["tokens"]["csrftoken"]
+        return token_box["csrf"]
+
+    def write(params):
+        for attempt in range(2):
+            response = post({**params, "format": "json", "token": token()})
+            err = response.get("error", {})
+            if err.get("code") == "badtoken" and attempt == 0:
+                token_box["csrf"] = None
+                continue
+            return response
+        return response
+
+    def run():
+        response = write({"action": "delete", "title": title, "reason": reason})
+        if response.get("error", {}).get("code") == "missingtitle":
+            return None
+        raise_for_error(response)
+        listing = get({"action": "query", "format": "json", "formatversion": "2", "prop": "deletedrevisions",
+                       "titles": title, "drvprop": "ids|timestamp|content", "drvslots": "main", "drvlimit": "max"})
+        raise_for_error(listing)
+        revisions = []
+        for page in listing["query"]["pages"]:
+            revisions.extend(page.get("deletedrevisions", []))
+        if not revisions:
+            return ""
+        latest = max(revisions, key=lambda rev: rev["timestamp"])
+        restored = write({"action": "undelete", "title": title, "reason": "机器人：恢复页面历史，文件保持删除",
+                          "timestamps": "|".join(rev["timestamp"] for rev in revisions)})
+        raise_for_error(restored)
+        return latest["slots"]["main"].get("content", "")
+
+    return call_with_backoff(run, f"删除并恢复历史 {title}", stop)
