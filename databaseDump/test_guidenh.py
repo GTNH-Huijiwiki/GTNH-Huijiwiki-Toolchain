@@ -321,7 +321,7 @@ class TitleAndOfficialLinkTest(unittest.TestCase):
         text = guidenh.landing_page(site, '4988a65')
         self.assertIn('[[GuideNH]]', text)
         self.assertIn('* [[指南:GuideNH/gt/index|首页]]（gt）', text)
-        self.assertIn('== 导航 ==\n{{GuideNH导航}}', text)
+        self.assertIn('== 导航 ==\n{{GuideNH异步导航}}', text)
         self.assertIn('[[分类:GuideNH]]', text)
         self.assertTrue(text.startswith('{{DISPLAYTITLE:GuideNH - 总览}}'))
 
