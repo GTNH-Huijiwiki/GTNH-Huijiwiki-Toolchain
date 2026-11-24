@@ -4,11 +4,16 @@ image_upload.py
 上传完成后实时标记为已上传。
 
 用法（--kind items|entities 选择物品图片或实体图片，默认 items，见 image_kinds.py）:
-    python image_upload.py                   # 全部（8 线程）
+    python image_upload.py                   # 全部（4 线程）
     python image_upload.py --kind entities   # 实体全身照与头像
     python image_upload.py --debug           # 前 20 张
-    python image_upload.py -t 16             # 16 线程
+    python image_upload.py -t 8              # 8 线程（线程多了会被站点限速）
     python image_upload.py --force-unstable  # 连同黑名单（config/image_unstable.json）里的图标一起上传
+    python image_upload.py --delete-existing # 目标名字现在是重定向页的，先删除再上传
+
+MediaWiki 的坑：现在是重定向页（文本为 #REDIRECT）的 File: 名字不能直接上传图片，必须先删页面。
+上传前先查每个标题：是重定向页的默认跳过并汇总（CONFLICT），加 --delete-existing 才先删后传。
+遇到站点限速时全部线程暂停（UPLOAD_RATE_LIMIT_WAIT 秒，默认 120）后重试。
 """
 
 import os
@@ -23,6 +28,7 @@ import threading
 import urllib.request
 import urllib.parse
 import http.cookiejar
+import image_files
 from image_version import require_source
 from image_kinds import LABELS, kind_exempt, kind_from_argv, kind_paths, kind_plan, kind_unstable
 from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy, HASH_CACHE
@@ -70,6 +76,7 @@ USERNAME = os.environ.get("BOT_USERNAME", "")
 PASSWORD = os.environ.get("BOT_PASSWORD", "")
 
 _stop = threading.Event()
+DEFAULT_THREADS = 4
 
 
 # ── Task DB ────────────────────────────────────────────────────
@@ -204,7 +211,7 @@ def upload_one(opener, path: str, bot: bool = True) -> dict:
             if r["error"].get("code") == "fileexists-no-change":
                 # 同名文件的当前版本与本次内容完全相同（常见于上次请求已成功但响应中断）。
                 return {"result": "Success", "_payload_sha1": hashlib.sha1(file_data).hexdigest()}
-            raise RuntimeError(err)
+            image_files.raise_for_error(r)
         result = r["upload"]
         result["_payload_sha1"] = hashlib.sha1(file_data).hexdigest()
         return result
@@ -215,38 +222,61 @@ def upload_one(opener, path: str, bot: bool = True) -> dict:
 # ── Worker ───────────────────────────────────────────────────
 
 def worker(icon_list: list, total: int, counters: dict, lock: threading.Lock,
-           master_jar):
-    """线程：独立 jar + 独立 CSRF，上传自己分到的图标。"""
+           master_jar, delete_existing: bool = False):
+    """线程：独立 jar + 独立 CSRF，上传自己分到的图标。每 50 张先查一次这些标题的线上状态。"""
     opener = make_opener_with_jar(clone_jar(master_jar))
 
-    for icon_name in icon_list:
-        if _stop.is_set():
-            return
-        path = os.path.join(ICONS_DIR, icon_name)
+    def post(params):
+        return _post_form(opener, params)
 
-        if not os.path.exists(path):
-            with lock:
-                counters["SKIP"] = counters.get("SKIP", 0) + 1
-                counters["done"] += 1
-            print(f"[{counters['done']}/{total}] SKIP {icon_name} (file not found)")
-            continue
+    def get(params):
+        return _get(opener, params)
 
-        try:
-            result = upload_one(opener, path, bot=True)
-            if result.get("result") == "Success":
-                status, msg = "OK", ""
-            else:
-                raise RuntimeError(f"上传未成功: {result.get('result', '?')}")
-            mark_icon_done(icon_name, result["_payload_sha1"])
-        except Exception as e:
-            # duplicate 可能指向另一文件名，不能据此认定目标图片已经可用。
-            status, msg = "FAIL", str(e)
-
+    def report(status, icon_name, msg=""):
         with lock:
             counters[status] = counters.get(status, 0) + 1
             counters["done"] += 1
             extra = f" - {msg}" if msg else ""
             print(f"[{counters['done']}/{total}] {status} {icon_name}{extra}")
+
+    for offset in range(0, len(icon_list), image_files.BATCH):
+        if _stop.is_set():
+            return
+        batch = icon_list[offset:offset + image_files.BATCH]
+        try:
+            states = image_files.file_states(post, ["File:" + n for n in batch], _stop)
+        except Exception as e:
+            for icon_name in batch:
+                report("FAIL", icon_name, f"查询线上状态失败: {e}")
+            continue
+
+        for icon_name in batch:
+            if _stop.is_set():
+                return
+            path = os.path.join(ICONS_DIR, icon_name)
+
+            if not os.path.exists(path):
+                report("SKIP", icon_name, "(file not found)")
+                continue
+
+            try:
+                if states.get("File:" + icon_name) in image_files.BLOCKS_UPLOAD:
+                    if not delete_existing:
+                        report("CONFLICT", icon_name, "这个名字现在是重定向页，不能直接上传；加 --delete-existing 先删再传")
+                        continue
+                    image_files.delete_page(post, get, "File:" + icon_name, "机器人：这个名字要上传真实图片，先删除重定向页", _stop)
+                    counters["DELETED"] = counters.get("DELETED", 0) + 1
+                result = image_files.call_with_backoff(
+                    lambda: upload_one(opener, path, bot=True), icon_name, _stop)
+                if result.get("result") == "Success":
+                    status, msg = "OK", ""
+                else:
+                    raise RuntimeError(f"上传未成功: {result.get('result', '?')}")
+                mark_icon_done(icon_name, result["_payload_sha1"])
+            except Exception as e:
+                # duplicate 可能指向另一文件名，不能据此认定目标图片已经可用。
+                status, msg = "FAIL", str(e)
+            report(status, icon_name, msg)
 
 
 # ── Main ─────────────────────────────────────────────────────
@@ -256,7 +286,8 @@ def main():
     _stop.clear()
     args = sys.argv[1:]
     debug = "--debug" in args
-    threads = 8
+    threads = DEFAULT_THREADS
+    delete_existing = "--delete-existing" in args
 
     for i, a in enumerate(args):
         if a == "-t" and i + 1 < len(args):
@@ -299,7 +330,7 @@ def main():
     for i, t in enumerate(tasks):
         chunks[i % threads].append(t)
 
-    counters = {"OK": 0, "SKIP": 0, "FAIL": 0, "done": 0}
+    counters = {"OK": 0, "SKIP": 0, "FAIL": 0, "CONFLICT": 0, "DELETED": 0, "done": 0}
     lock = threading.Lock()
     workers = []
     for tid in range(threads):
@@ -307,7 +338,7 @@ def main():
             continue
         t = threading.Thread(
             target=worker,
-            args=(chunks[tid], total, counters, lock, master_jar),
+            args=(chunks[tid], total, counters, lock, master_jar, delete_existing),
             daemon=True,
         )
         t.start()
@@ -327,7 +358,11 @@ def main():
             t.join(timeout=2)
 
     remaining = len(get_pending_icons(plan))
-    print(f"Done! OK: {counters['OK']}, SKIP: {counters['SKIP']}, FAIL: {counters['FAIL']}")
+    print(f"Done! OK: {counters['OK']}, SKIP: {counters['SKIP']}, FAIL: {counters['FAIL']}, "
+          f"CONFLICT: {counters['CONFLICT']}, DELETED: {counters['DELETED']}")
+    if counters["CONFLICT"]:
+        print(f"{counters['CONFLICT']} titles are redirect pages right now, so the upload was skipped. "
+              f"Re-run with --delete-existing to delete those pages and upload the images.")
     if remaining:
         print(f"{remaining} icons still pending (re-run to retry failures)")
 
