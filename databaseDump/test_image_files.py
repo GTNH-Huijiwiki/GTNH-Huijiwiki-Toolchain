@@ -26,6 +26,18 @@ class ClassifyTests(unittest.TestCase):
         p = page("File:Icon 钢.png", imageinfo=[{"url": "https://x/Icon_%E9%92%A2.png"}])
         self.assertEqual(f.classify_page(p), f.OWN_FILE)
 
+    def test_same_file_name(self):
+        self.assertTrue(f.same_file_name("icon_A_b.png", "Icon A b.png"))
+        self.assertTrue(f.same_file_name("Icon_A_b.png", "Icon_A_b.png"))
+        self.assertFalse(f.same_file_name("Icon_A_c.png", "Icon_A_b.png"))
+        self.assertFalse(f.same_file_name("", "Icon_A_b.png"))
+
+    def test_details_report_stored_name(self):
+        def post(params):
+            return {"query": {"pages": [page("File:A.png", redirect=True, imageinfo=[{"url": "https://x/Target.png"}])]}}
+
+        self.assertEqual(f.file_details(post, ["File:A.png"]), {"File:A.png": (f.REDIRECT, "Target.png")})
+
     def test_blocking_sets(self):
         self.assertEqual(f.BLOCKS_REDIRECT, {f.OWN_FILE, f.BROKEN})
         self.assertEqual(f.BLOCKS_UPLOAD, {f.REDIRECT, f.BROKEN})

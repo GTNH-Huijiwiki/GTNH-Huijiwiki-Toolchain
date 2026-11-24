@@ -77,11 +77,7 @@ def _file_part(title: str) -> str:
 
 
 def stored_under_own_name(page: dict) -> bool:
-    info = page.get("imageinfo") or []
-    if not info:
-        return False
-    stored = urllib.parse.unquote(info[0].get("url", "").rsplit("/", 1)[-1]).replace(" ", "_")
-    return stored == _file_part(page["title"])
+    return stored_name(page) == _file_part(page["title"])
 
 
 def classify_page(page: dict) -> str:
@@ -99,9 +95,28 @@ BLOCKS_REDIRECT = {OWN_FILE, BROKEN}
 BLOCKS_UPLOAD = {REDIRECT, BROKEN}
 
 
+def stored_name(page: dict) -> str:
+    """imageinfo 里实际存的文件名（生效的重定向是目标文件的名字），没有文件返回空串。"""
+    info = page.get("imageinfo") or []
+    if not info:
+        return ""
+    return urllib.parse.unquote(info[0].get("url", "").rsplit("/", 1)[-1]).replace(" ", "_")
+
+
+def same_file_name(a: str, b: str) -> bool:
+    """文件名比较：空格等同下划线，首字母大小写不敏感（MediaWiki 标题首字母自动大写）。"""
+    a, b = a.replace(" ", "_"), b.replace(" ", "_")
+    return bool(a) and a[:1].upper() + a[1:] == b[:1].upper() + b[1:]
+
+
 def file_states(post, titles: list[str], stop: threading.Event | None = None) -> dict[str, str]:
     """标题 → 状态。post(params) 发 POST 并返回解析后的 JSON。每次最多查 50 个标题。"""
-    states: dict[str, str] = {}
+    return {title: state for title, (state, _) in file_details(post, titles, stop).items()}
+
+
+def file_details(post, titles: list[str], stop: threading.Event | None = None) -> dict[str, tuple[str, str]]:
+    """标题 → (状态, imageinfo 里实际存的文件名)。"""
+    states: dict[str, tuple[str, str]] = {}
     for offset in range(0, len(titles), BATCH):
         batch = titles[offset:offset + BATCH]
 
@@ -115,7 +130,8 @@ def file_states(post, titles: list[str], stop: threading.Event | None = None) ->
         normalized = {item["from"]: item["to"] for item in query.get("normalized", [])}
         pages = {page["title"]: page for page in query["pages"]}
         for title in batch:
-            states[title] = classify_page(pages.get(normalized.get(title, title), {"title": title, "missing": True}))
+            page = pages.get(normalized.get(title, title), {"title": title, "missing": True})
+            states[title] = (classify_page(page), stored_name(page))
     return states
 
 

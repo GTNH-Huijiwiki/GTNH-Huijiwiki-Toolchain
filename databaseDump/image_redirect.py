@@ -9,6 +9,7 @@ image_redirect.py
     python image_redirect.py --debug           # 前 20 条
     python image_redirect.py -t 8              # 8 线程（线程多了会被站点限速）
     python image_redirect.py --delete-existing # 名字下已有真实文件的，先删除文件页再建重定向
+    python image_redirect.py --recheck         # 不看状态库，按线上实际状态核对计划里全部重定向，没生效的补建
 
 MediaWiki 的坑：曾上传过文件的 File: 名字，改成 #REDIRECT 不会生效，只当成图片描述；必须先删页面再新建。
 所以创建前先查每个标题：名字下有自己文件的默认跳过并汇总（CONFLICT），加 --delete-existing 才先删后建。
@@ -86,13 +87,17 @@ def sanitize_title(title: str) -> str:
 
 # ── Task DB ────────────────────────────────────────────────────
 
-def get_pending_redirects(plan=None) -> list[tuple[str, str]]:
-    """读取当前 CSV 中有效且图片已上传的待更新重定向。"""
+def get_pending_redirects(plan=None, recheck: bool = False) -> list[tuple[str, str]]:
+    """读取当前 CSV 中有效且图片已上传的待更新重定向；recheck 时取计划里的全部重定向（目标图片要已上传）。"""
     if plan is None:
         plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     current_redirects = plan['redirects']
     update_state(INVENTORY_DB, set(plan['uploadIcons']), current_redirects)
     tasks = pending_redirects(INVENTORY_DB, current_redirects)
+    if recheck:
+        with closing(sqlite3.connect(INVENTORY_DB)) as conn:
+            uploaded = {r[0] for r in conn.execute("SELECT icon_name FROM images WHERE icon_state='已上传'")}
+        tasks = sorted((title, icon) for title, icon in current_redirects.items() if icon in uploaded)
     if KIND == 'entities' and tasks:
         # 实体中文名可能已被人工上传的独立图片占用，不把它改成重定向。
         taken = standalone_files(title for title, _ in tasks)
@@ -192,7 +197,7 @@ def create_redirect(opener, from_title: str, to_title: str,
 # ── Worker ───────────────────────────────────────────────────
 
 def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
-           master_jar, delete_existing: bool = False):
+           master_jar, delete_existing: bool = False, recheck: bool = False):
     """线程：独立 jar + 独立 CSRF，完成一条立刻写 DB。每 50 条先查一次这些标题的线上状态。"""
     opener = make_opener_with_jar(clone_jar(master_jar))
     csrf = fetch_csrf(opener)
@@ -215,7 +220,8 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
             return
         batch = task_list[offset:offset + BATCH]
         try:
-            states = image_files.file_states(post, [t for t, _ in batch], _stop)
+            details = image_files.file_details(post, [t for t, _ in batch], _stop)
+            states = {t: d[0] for t, d in details.items()}
         except Exception as e:
             for from_title, icon_name in batch:
                 report("FAIL", from_title, f"File:{icon_name}", f"查询线上状态失败: {e}")
@@ -226,6 +232,11 @@ def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
                 return
             to_title = f"File:{icon_name}"
             try:
+                if (recheck and states.get(from_title) == image_files.REDIRECT
+                        and image_files.same_file_name(details[from_title][1], icon_name)):
+                    mark_redirect_done(from_title, icon_name)
+                    report("SKIP", from_title, to_title, "已生效")
+                    continue
                 if states.get(from_title) in image_files.BLOCKS_REDIRECT:
                     if not delete_existing:
                         report("CONFLICT", from_title, to_title, "这个名字下已有自己的文件，写重定向不会生效；加 --delete-existing 先删再建")
@@ -264,6 +275,7 @@ def main():
     debug = "--debug" in args
     threads = DEFAULT_THREADS
     delete_existing = "--delete-existing" in args
+    recheck = "--recheck" in args
 
     for i, a in enumerate(args):
         if a == "-t" and i + 1 < len(args):
@@ -271,7 +283,7 @@ def main():
 
     print(f"[{LABELS[KIND]}]")
     plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
-    tasks = get_pending_redirects(plan)
+    tasks = get_pending_redirects(plan, recheck)
     if not tasks:
         print("No pending redirects. Run image_inventory.py first.")
         return
@@ -303,7 +315,7 @@ def main():
             continue
         t = threading.Thread(
             target=worker,
-            args=(chunks[tid], total, counters, lock, master_jar, delete_existing),
+            args=(chunks[tid], total, counters, lock, master_jar, delete_existing, recheck),
             daemon=True,
         )
         t.start()
@@ -322,7 +334,7 @@ def main():
         for t in workers:
             t.join(timeout=2)
 
-    remaining = len(get_pending_redirects(plan))
+    remaining = len(get_pending_redirects(plan))  # 状态库里仍待更新的
     print(f"Done! OK: {counters['OK']}, SKIP: {counters['SKIP']}, FAIL: {counters['FAIL']}, "
           f"CONFLICT: {counters['CONFLICT']}, DELETED: {counters['DELETED']}")
     if counters["CONFLICT"]:
