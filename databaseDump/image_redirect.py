@@ -4,10 +4,15 @@ image_redirect.py
 完成后实时标记为已上传。
 
 用法（--kind items|entities 选择物品图片或实体图片，默认 items，见 image_kinds.py）:
-    python image_redirect.py                   # 全部（8 线程）
+    python image_redirect.py                   # 全部（4 线程）
     python image_redirect.py --kind entities   # 实体中文名 → 头像
     python image_redirect.py --debug           # 前 20 条
-    python image_redirect.py -t 16             # 16 线程
+    python image_redirect.py -t 8              # 8 线程（线程多了会被站点限速）
+    python image_redirect.py --delete-existing # 名字下已有真实文件的，先删除文件页再建重定向
+
+MediaWiki 的坑：曾上传过文件的 File: 名字，改成 #REDIRECT 不会生效，只当成图片描述；必须先删页面再新建。
+所以创建前先查每个标题：名字下有自己文件的默认跳过并汇总（CONFLICT），加 --delete-existing 才先删后建。
+遇到站点限速时全部线程暂停（UPLOAD_RATE_LIMIT_WAIT 秒，默认 120）后重试。
 """
 
 import os
@@ -25,6 +30,7 @@ import http.cookiejar
 from image_version import require_source
 from image_state import pending_redirects
 from image_state import update_state
+import image_files
 from image_kinds import LABELS, kind_from_argv, kind_paths, kind_plan, standalone_files
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -64,6 +70,8 @@ USERNAME = os.environ.get("BOT_USERNAME", "")
 PASSWORD = os.environ.get("BOT_PASSWORD", "")
 
 _stop = threading.Event()
+DEFAULT_THREADS = 4
+BATCH = image_files.BATCH
 
 # MediaWiki 标题非法字符 → "-"
 _INVALID_TITLE_CHARS = str.maketrans("[]{}|<>", "-------")
@@ -177,50 +185,74 @@ def create_redirect(opener, from_title: str, to_title: str,
         err = r["error"]["info"]
         if "Invalid CSRF" in err or "badtoken" in err.lower():
             return None
-        raise RuntimeError(err)
+        image_files.raise_for_error(r)
     return r["edit"]
 
 
 # ── Worker ───────────────────────────────────────────────────
 
 def worker(task_list: list, total: int, counters: dict, lock: threading.Lock,
-           master_jar):
-    """线程：独立 jar + 独立 CSRF，完成一条立刻写 DB。"""
+           master_jar, delete_existing: bool = False):
+    """线程：独立 jar + 独立 CSRF，完成一条立刻写 DB。每 50 条先查一次这些标题的线上状态。"""
     opener = make_opener_with_jar(clone_jar(master_jar))
     csrf = fetch_csrf(opener)
 
-    for (from_title, icon_name) in task_list:
-        if _stop.is_set():
-            return
-        to_title = f"File:{icon_name}"
-        try:
-            result = create_redirect(
-                opener, from_title, to_title, csrf,
-                summary="机器人：批量创建图片重定向",
-                bot=True,
-            )
-            if result is None:
-                csrf = fetch_csrf(opener)
-                result = create_redirect(
-                    opener, from_title, to_title, csrf,
-                    summary="机器人：批量创建图片重定向",
-                    bot=True,
-                )
-            if result is None:
-                status, msg = "FAIL", "CSRF retry exhausted"
-            else:
-                mark_redirect_done(from_title, icon_name)
-                status = "OK" if "nochange" not in result else "SKIP"
-                msg = ""
-        except Exception as e:
-            err = str(e)
-            status, msg = "FAIL", err
+    def post(params):
+        return _post_form(opener, params)
 
+    def get(params):
+        return _get(opener, params)
+
+    def report(status, from_title, to_title, msg=""):
         with lock:
             counters[status] = counters.get(status, 0) + 1
             counters["done"] += 1
             extra = f" - {msg}" if msg else ""
             print(f"[{counters['done']}/{total}] {status} {from_title} -> {to_title}{extra}")
+
+    for offset in range(0, len(task_list), BATCH):
+        if _stop.is_set():
+            return
+        batch = task_list[offset:offset + BATCH]
+        try:
+            states = image_files.file_states(post, [t for t, _ in batch], _stop)
+        except Exception as e:
+            for from_title, icon_name in batch:
+                report("FAIL", from_title, f"File:{icon_name}", f"查询线上状态失败: {e}")
+            continue
+
+        for (from_title, icon_name) in batch:
+            if _stop.is_set():
+                return
+            to_title = f"File:{icon_name}"
+            try:
+                if states.get(from_title) in image_files.BLOCKS_REDIRECT:
+                    if not delete_existing:
+                        report("CONFLICT", from_title, to_title, "这个名字下已有自己的文件，写重定向不会生效；加 --delete-existing 先删再建")
+                        continue
+                    image_files.delete_page(post, get, from_title, "机器人：这个名字要改成重定向，先删除原文件页", _stop)
+                    counters["DELETED"] = counters.get("DELETED", 0) + 1
+
+                def edit():
+                    nonlocal csrf
+                    result = create_redirect(opener, from_title, to_title, csrf,
+                                             summary="机器人：批量创建图片重定向", bot=True)
+                    if result is None:
+                        csrf = fetch_csrf(opener)
+                        result = create_redirect(opener, from_title, to_title, csrf,
+                                                 summary="机器人：批量创建图片重定向", bot=True)
+                    return result
+
+                result = image_files.call_with_backoff(edit, from_title, _stop)
+                if result is None:
+                    status, msg = "FAIL", "CSRF retry exhausted"
+                else:
+                    mark_redirect_done(from_title, icon_name)
+                    status = "OK" if "nochange" not in result else "SKIP"
+                    msg = ""
+            except Exception as e:
+                status, msg = "FAIL", str(e)
+            report(status, from_title, to_title, msg)
 
 
 # ── Main ─────────────────────────────────────────────────────
@@ -230,7 +262,8 @@ def main():
     _stop.clear()
     args = sys.argv[1:]
     debug = "--debug" in args
-    threads = 8
+    threads = DEFAULT_THREADS
+    delete_existing = "--delete-existing" in args
 
     for i, a in enumerate(args):
         if a == "-t" and i + 1 < len(args):
@@ -262,7 +295,7 @@ def main():
     for i, t in enumerate(tasks):
         chunks[i % threads].append(t)
 
-    counters = {"OK": 0, "SKIP": 0, "FAIL": 0, "done": 0}
+    counters = {"OK": 0, "SKIP": 0, "FAIL": 0, "CONFLICT": 0, "DELETED": 0, "done": 0}
     lock = threading.Lock()
     workers = []
     for tid in range(threads):
@@ -270,7 +303,7 @@ def main():
             continue
         t = threading.Thread(
             target=worker,
-            args=(chunks[tid], total, counters, lock, master_jar),
+            args=(chunks[tid], total, counters, lock, master_jar, delete_existing),
             daemon=True,
         )
         t.start()
@@ -290,7 +323,11 @@ def main():
             t.join(timeout=2)
 
     remaining = len(get_pending_redirects(plan))
-    print(f"Done! OK: {counters['OK']}, SKIP: {counters['SKIP']}, FAIL: {counters['FAIL']}")
+    print(f"Done! OK: {counters['OK']}, SKIP: {counters['SKIP']}, FAIL: {counters['FAIL']}, "
+          f"CONFLICT: {counters['CONFLICT']}, DELETED: {counters['DELETED']}")
+    if counters["CONFLICT"]:
+        print(f"{counters['CONFLICT']} titles already hold their own file, so a redirect there would not work. "
+              f"Re-run with --delete-existing to delete those file pages and create the redirects.")
     if remaining:
         print(f"{remaining} redirects still pending (re-run to retry failures)")
 

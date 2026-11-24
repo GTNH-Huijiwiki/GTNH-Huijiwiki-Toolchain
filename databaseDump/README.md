@@ -20,6 +20,7 @@
 - `data_upload.py`：读取 `wiki_inventory.db`，把待上传页面推到 wiki。
 - `image_upload.py`：读取 `image_inventory.db`，上传图标文件。
 - `image_redirect.py`：读取 `image_inventory.db`，创建 `File:` 图片重定向页。
+- `image_audit.py`：只读审计，查计划里每个待传名字和待建重定向在线上的状态，见“文件页与重定向的坑”。
 
 ## 数据库
 
@@ -112,9 +113,13 @@ python data_upload.py
 
 ```bash
 python image_inventory.py
-python image_upload.py
-python image_redirect.py
+python image_audit.py --output audit.json   # 只读：先看有多少名字会撞上文件页的坑
+python image_upload.py --delete-existing
+python image_redirect.py --delete-existing
+python image_audit.py                       # 做完再审计一遍，两项“要先删”都应为 0
 ```
+
+图片脚本默认 4 线程，遇到站点反滥用限速时全部线程暂停（`UPLOAD_RATE_LIMIT_WAIT` 秒，默认 120）后重试；线程别开太多。
 
 ## 矿辞与物品依赖
 
@@ -414,6 +419,22 @@ GTNH 保留已有数据库和上传记录。图片任务只选择当前来源中
 物品 key、NBT、配方数据、本地 PNG 和已上传文件历史均保留。额外素材沿用原有上传方式。
 
 Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数据源及本地清单。
+
+### 文件页与重定向的坑
+
+曾经上传过文件的 `File:` 名字，之后再编辑成 `#REDIRECT [[File:目标]]`，重定向不会生效：文件还在，页面文本只被当作图片描述。
+反过来，现在是重定向页的名字，也不能直接上传图片。两种情况都必须先删除这个文件页（连同文件），再新建重定向或重新上传。
+删除可以在站点上恢复，不是危险操作。
+
+- 判断一个名字下有没有“自己的文件”，不能只看有没有 `imageinfo`：生效的重定向，接口也会返回目标文件的 `imageinfo`。
+  要比较 `imageinfo.url` 末尾的文件名和标题自己的文件名，相同才是自己的文件。`image_files.py` 实现了这个判断，分五类：
+  `free`（页面不存在）、`own_file`（自己的文件）、`broken`（自己的文件，页面文本却是 `#REDIRECT`，重定向没生效）、
+  `redirect`（重定向页，已生效或目标没有文件）、`plain_page`（只剩描述页）。
+- `image_redirect.py`：创建前先查标题，`own_file`/`broken` 默认跳过并汇总为 `CONFLICT`，加 `--delete-existing` 才先删后建。
+- `image_upload.py`：上传前先查标题，`redirect`/`broken` 默认跳过并汇总为 `CONFLICT`，加 `--delete-existing` 才先删后传。
+- `image_audit.py`：只读，不登录；上传名字和重定向标题各按类别汇总，`--output` 写出每个类别的清单。
+- 安排顺序：先审计，再清理冲突，上传图片，最后建重定向，收尾再审计一遍。不要先上传再回头删，上传占住的名字之后建不了重定向。
+- 历史遗留：很久以前有人用中文名传过图片的名字、早年批量写下但没生效的重定向，都属于这一类，需要删了重建。
 
 ### 重传判定（image_check.py）
 
