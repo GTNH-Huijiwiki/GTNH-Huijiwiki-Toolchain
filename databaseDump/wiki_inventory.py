@@ -395,6 +395,7 @@ def rebuild_tasks(refresh: bool, delete_dirs=frozenset()):
 def main(argv=None):
     require_scope(WIKI_PREFIX)
     args = sys.argv[1:] if argv is None else argv
+    gscope.apply_cli_flag(args)
     refresh = "--refresh" in args
     stats_only = "--stats" in args
     delete_dirs = frozenset(args[i + 1] for i, a in enumerate(args) if a == "--delete-dir" and i + 1 < len(args))

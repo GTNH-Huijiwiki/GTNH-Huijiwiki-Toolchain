@@ -19,9 +19,29 @@ MODULE_SUFFIX = '.lua'
 MODULE_NAMESPACE = 'Module'  # 工具链的本地镜像与标题都用英文名；线上显示为“模块”
 
 
+PARSE_ENV = 'GUIDENH_PARSE'
+SKIP_FLAG = '--no-guidenh'
+
+
+def parse_enabled() -> bool:
+    """是否解析 GuideNH 页面：GUIDENH_PARSE，默认解析；split_all、wiki_inventory、data_upload 的 --no-guidenh 等同于 0。"""
+    value = os.environ.get(PARSE_ENV, '').strip().lower()
+    if value in ('', '1', 'true', 'yes', 'on'):
+        return True
+    if value in ('0', 'false', 'no', 'off'):
+        return False
+    raise ValueError(f'{PARSE_ENV} 只能是 1/0、true/false、yes/no 或 on/off: {value!r}')
+
+
+def apply_cli_flag(args) -> None:
+    """命令行的 --no-guidenh 优先于 .env。"""
+    if SKIP_FLAG in args:
+        os.environ[PARSE_ENV] = '0'
+
+
 def enabled() -> bool:
-    """只有本体（MOD_LOCAL_NAME=GTNH）的流程处理指南页面。"""
-    return local_mod_name() == 'GTNH'
+    """本次是否处理指南页面：开启解析，且是本体（MOD_LOCAL_NAME=GTNH）的流程。"""
+    return parse_enabled() and local_mod_name() == 'GTNH'
 
 
 def page_prefix() -> str:

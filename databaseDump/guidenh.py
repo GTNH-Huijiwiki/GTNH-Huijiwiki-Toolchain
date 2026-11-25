@@ -671,6 +671,9 @@ def stage_images(site, used_scene_images, staging: Path) -> dict:
 
 
 def run(dumps_dir, wikitext_root, debug=False):
+    if not scope.parse_enabled():
+        print(f'  跳过：按设置不解析 GuideNH 页面（{scope.PARSE_ENV}=0 或 {scope.SKIP_FLAG}）')
+        return
     if not scope.enabled():
         print('  跳过：GuideNH 只在 MOD_LOCAL_NAME=GTNH 时处理')
         return

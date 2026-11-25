@@ -23,6 +23,7 @@ from data_version import addon_mods, local_mod_name, source_directory, version_m
 from item_names import build_artifacts, image_name_config, read_items, write_item_name_index
 from nbt_identity import nbt_identity
 from item_exclusions import fluid_names, load_policy, rewrite_fluids
+import guidenh_scope as gscope
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_array_pages, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
@@ -1039,15 +1040,22 @@ def _load_achievements():
 
 def _attach_guide_pages(items):
     """GuideNH：页面表头 item_ids 声明的关联 → 物品的 guidenhPages（页面后缀），见 guidenh.py。"""
+    lost = "物品数据不带 guidenhPages，上传 Items 会抹掉线上已有的指南关联"
+    if not gscope.parse_enabled():
+        print(f"  [Links] 按设置不解析 GuideNH：{lost}")
+        return
     try:
         import yaml  # noqa: F401
         import guidenh
     except ImportError:
-        print("  [Links] 跳过指南关联：需要 PyYAML（python -m pip install PyYAML）")
+        print(f"  [Links] WARNING: 跳过指南关联，需要 PyYAML（python -m pip install PyYAML）：{lost}")
         return
     index = guidenh.item_page_index()
     if index:
         print(f"  [Links] {guidenh.attach_guide_pages(items, index):,} items carry guidenhPages")
+    else:
+        print(f"  [Links] WARNING: 没有读到任何指南页面关联：{lost}。检查 GUIDENH_REPO / GUIDENH_DIR；"
+              f"确实不需要时用 {gscope.SKIP_FLAG}")
 
 
 def _attach_item_links(items):
@@ -2473,6 +2481,9 @@ def do_guidenh(debug: bool):
     print("=" * 50)
     print("[GuideNH]")
     print("=" * 50)
+    if not gscope.parse_enabled():
+        print(f"  跳过：按设置不解析 GuideNH 页面（{gscope.PARSE_ENV}=0 或 {gscope.SKIP_FLAG}）")
+        return
     try:
         import yaml  # noqa: F401  guidenh 读取页面表头需要 PyYAML
     except ImportError:
@@ -2577,6 +2588,7 @@ def configure_source(require_source: bool = True):
 
 
 def main():
+    gscope.apply_cli_flag(sys.argv)
     debug = "--debug" in sys.argv
     tabx = "--tabx" in sys.argv
     args = [a.lower() for a in sys.argv[1:] if not a.startswith("--")]
