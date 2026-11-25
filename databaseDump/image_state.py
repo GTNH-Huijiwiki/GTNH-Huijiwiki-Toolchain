@@ -37,12 +37,25 @@ def init_db(path):
         conn.execute("CREATE TABLE IF NOT EXISTS visual_checks ("
                      "wiki_sha1 TEXT NOT NULL, content_sha1 TEXT NOT NULL, same INTEGER NOT NULL, "
                      "PRIMARY KEY (wiki_sha1, content_sha1))")
+        # 黑名单图标里线上尺寸与本地不同的（线上 sha1，本地 sha1），黑名单对它们不起作用。
+        conn.execute("CREATE TABLE IF NOT EXISTS reshaped ("
+                     "wiki_sha1 TEXT NOT NULL, content_sha1 TEXT NOT NULL, PRIMARY KEY (wiki_sha1, content_sha1))")
 
 
-# 线上已有文件时视为已上传：字节相同、视觉规则判定相同，或在免更新名单（动图、渲染不稳定）中。
+# 线上已有文件时视为已上传：字节相同、视觉规则判定相同，或在黑名单（渲染不稳定）中且线上尺寸相同。
 _SETTLED = ("uploaded_sha1=content_sha1 OR EXISTS (SELECT 1 FROM visual_checks v "
             "WHERE v.wiki_sha1=images.uploaded_sha1 AND v.content_sha1=images.content_sha1 AND v.same=1) "
-            "OR (uploaded_sha1 IS NOT NULL AND icon_name IN (SELECT icon_name FROM temp.exempt))")
+            "OR (uploaded_sha1 IS NOT NULL AND icon_name IN (SELECT icon_name FROM temp.exempt) "
+            "AND NOT EXISTS (SELECT 1 FROM reshaped r "
+            "WHERE r.wiki_sha1=images.uploaded_sha1 AND r.content_sha1=images.content_sha1))")
+
+
+def reshaped_icons(path) -> set[str]:
+    """当前本地文件与线上文件尺寸不同、必须上传的黑名单图标。"""
+    with closing(sqlite3.connect(path)) as conn:
+        return {name for name, in conn.execute(
+            "SELECT i.icon_name FROM images i JOIN reshaped r "
+            "ON r.wiki_sha1=i.uploaded_sha1 AND r.content_sha1=i.content_sha1")}
 
 
 def _load_exempt(conn, exempt):

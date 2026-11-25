@@ -81,12 +81,12 @@ def guidenh_plan() -> dict:
     return {'schemaVersion': 1, 'uploadIcons': plan['uploadIcons'], 'redirects': {}}
 
 
-def kind_exempt(kind: str, source: str) -> dict[str, str]:
-    """免更新名单与 config/image_unstable.json 共用；实体图片的文件名不与物品图标重叠。"""
+def kind_exempt(kind: str) -> dict[str, str]:
+    """免更新名单来自 config/image_unstable.json；实体图片的文件名不与物品图标重叠。"""
     if kind == 'guidenh':
-        return {}  # 指南图片不是游戏渲染的物品图标，没有动图或渲染波动
+        return {}  # 指南图片不是游戏渲染的物品图标，没有渲染波动
     from image_check import exempt_icons
-    return exempt_icons(source)
+    return exempt_icons()
 
 
 def kind_unstable(kind: str) -> set[str]:

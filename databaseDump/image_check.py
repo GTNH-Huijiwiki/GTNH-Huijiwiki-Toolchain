@@ -1,4 +1,4 @@
-"""图片是否需要重传的判定：视觉规则、免更新名单和线上状态记录。
+"""图片是否需要重传的判定：视觉规则、黑名单和线上状态记录。
 
 用法（在 .env 配好数据源后）:
     python image_check.py stability <dumpsA> <dumpsB> [...] [--replace]
@@ -6,11 +6,12 @@
 
 判定规则（image_inventory.py 与 image_upload.py 共用）:
 1. 本地文件 sha1 与线上文件 sha1 相同：不传。
-2. 黑名单（config/image_unstable.json，多次导出仍有波动）：默认不传，线上没有也不传；
-   image_upload.py 加 --force-unstable 才上传。
-   免更新：导出时是动图（itemicon.json 的 frameCount > 1，含静态图与帧条），且线上已有文件：不传。
+2. 黑名单（config/image_unstable.json，多次导出仍有波动）：线上已有且尺寸相同的不更新，线上没有的默认
+   也不传；image_upload.py 加 --force-unstable 才上传。线上文件尺寸与本地不同时黑名单不起作用，照常上传：
+   数据页写的是本地帧数与帧尺寸，旧帧条会显示错乱。
 3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取通道差最大值，
-   平均值 ≤ 1 且最大值 ≤ 32 视为相同：不传。判定按（线上 sha1，本地 sha1）记在 image_inventory.db
+   平均值 ≤ 1 且最大值 ≤ 32 视为相同：不传。动图帧条（*_dynamic.png）逐帧套用，任一帧超限即视为不同；
+   整图尺寸不同（帧数或帧尺寸变化）直接视为不同。判定按（线上 sha1，本地 sha1）记在 image_inventory.db
    （随仓库提交，其他维护者同样复用），下次不再下载比对。
 4. 其余上传。
 """
@@ -40,17 +41,25 @@ BROWSER_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
 
 # ── 视觉规则 ──────────────────────────────────────────────────
 
-def fingerprint(data: bytes):
-    """32×32 预乘 RGBA；返回 (原尺寸, 像素元组列表)。"""
-    with Image.open(io.BytesIO(data)) as image:
-        size = image.size
-        small = image.convert('RGBA').resize((FINGERPRINT_SIZE, FINGERPRINT_SIZE), Image.BOX)
-    raw = small.tobytes()
+def _fingerprint_pixels(image):
+    """RGBA 图缩到 32×32 后的预乘像素元组列表。"""
+    raw = image.resize((FINGERPRINT_SIZE, FINGERPRINT_SIZE), Image.BOX).tobytes()
     pixels = []
     for i in range(0, len(raw), 4):
         r, g, b, a = raw[i:i + 4]
         pixels.append((r * a // 255, g * a // 255, b * a // 255, a))
-    return size, pixels
+    return pixels
+
+
+def fingerprint(data: bytes):
+    """32×32 预乘 RGBA；返回 (原尺寸, 像素元组列表)。"""
+    with Image.open(io.BytesIO(data)) as image:
+        return image.size, _fingerprint_pixels(image.convert('RGBA'))
+
+
+def _distance(pa, pb):
+    diffs = [max(abs(x - y) for x, y in zip(u, v)) for u, v in zip(pa, pb)]
+    return sum(diffs) / len(diffs), max(diffs)
 
 
 def visual_distance(a: bytes, b: bytes):
@@ -59,29 +68,41 @@ def visual_distance(a: bytes, b: bytes):
     size_b, pb = fingerprint(b)
     if size_a != size_b:
         return None
-    diffs = [max(abs(x - y) for x, y in zip(u, v)) for u, v in zip(pa, pb)]
-    return sum(diffs) / len(diffs), max(diffs)
+    return _distance(pa, pb)
+
+
+def _within_limits(distance) -> bool:
+    return distance[0] <= MEAN_LIMIT and distance[1] <= MAX_LIMIT
 
 
 def visually_same(a: bytes, b: bytes) -> bool:
     distance = visual_distance(a, b)
-    return distance is not None and distance[0] <= MEAN_LIMIT and distance[1] <= MAX_LIMIT
+    return distance is not None and _within_limits(distance)
 
 
-# ── 免更新名单 ────────────────────────────────────────────────
+def strips_same(a: bytes, b: bytes) -> bool:
+    """横向帧条逐帧套用视觉规则。整条缩到 32×32 会把上百帧压在一起，某一帧画错也看不出来。"""
+    with Image.open(io.BytesIO(a)) as first, Image.open(io.BytesIO(b)) as second:
+        if first.size != second.size:
+            return False
+        width, height = first.size
+        if width % height:
+            return visually_same(a, b)
+        first, second = first.convert('RGBA'), second.convert('RGBA')
+    for left in range(0, width, height):
+        box = (left, 0, left + height, height)
+        one, other = first.crop(box), second.crop(box)
+        if one.tobytes() != other.tobytes() \
+                and not _within_limits(_distance(_fingerprint_pixels(one), _fingerprint_pixels(other))):
+            return False
+    return True
 
-def animated_icons(source) -> set[str]:
-    """导出时是动图的物品：静态图与帧条都免更新。"""
-    path = Path(source) / 'itemicon.json'
-    if not path.is_file():
-        return set()
-    result = set()
-    for row in json.loads(path.read_text('utf-8'))['shortKey']:
-        if (row.get('frameCount') or 1) > 1 and row.get('iconName'):
-            result.add(row['iconName'])
-            result.add(row['iconName'].removesuffix('.png') + '_dynamic.png')
-    return result
 
+def same_picture(name: str, remote: bytes, local: bytes) -> bool:
+    return (strips_same if name.endswith('_dynamic.png') else visually_same)(remote, local)
+
+
+# ── 黑名单 ────────────────────────────────────────────────────
 
 def unstable_icons() -> set[str]:
     if not UNSTABLE_CONFIG.is_file():
@@ -89,11 +110,9 @@ def unstable_icons() -> set[str]:
     return set(json.loads(UNSTABLE_CONFIG.read_text('utf-8'))['icons'])
 
 
-def exempt_icons(source) -> dict[str, str]:
-    """图标名 → 免更新原因。"""
-    reasons = {name: 'unstable' for name in unstable_icons()}
-    reasons.update((name, 'animated') for name in animated_icons(source))
-    return reasons
+def exempt_icons() -> dict[str, str]:
+    """图标名 → 免更新原因（线上已有同尺寸文件时不更新）。"""
+    return {name: 'unstable' for name in unstable_icons()}
 
 
 def pixel_manifest(source) -> dict[str, str]:
@@ -147,7 +166,7 @@ def _api(params: dict) -> dict:
 
 
 def wiki_files(names, threads=8) -> dict[str, dict]:
-    """文件名 → {'sha1', 'url'}；线上不存在的不返回。每批 50 个标题，多线程并发查询。"""
+    """文件名 → {'sha1', 'url', 'size'}；线上不存在的不返回。每批 50 个标题，多线程并发查询。"""
     from item_names import canonical_file
     names = sorted(names)
     batches = [names[offset:offset + 50] for offset in range(0, len(names), 50)]
@@ -156,7 +175,7 @@ def wiki_files(names, threads=8) -> dict[str, dict]:
         for attempt in range(3):
             try:
                 return batch, _api(dict(action='query', titles='|'.join('File:' + n for n in batch),
-                                        prop='imageinfo', iiprop='sha1|url'))
+                                        prop='imageinfo', iiprop='sha1|url|size'))
             except OSError:
                 if attempt == 2:
                     raise
@@ -169,7 +188,8 @@ def wiki_files(names, threads=8) -> dict[str, dict]:
             for name in batch:
                 info = (by_title.get(canonical_file(name), {}).get('imageinfo') or [None])[0]
                 if info:
-                    result[name] = {'sha1': info['sha1'], 'url': info['url']}
+                    result[name] = {'sha1': info['sha1'], 'url': info['url'],
+                                    'size': (info.get('width'), info.get('height'))}
             if done % 100 == 0:
                 print(f'  queried {done * 50:,}/{len(names):,} wiki files', flush=True)
     return result
@@ -203,6 +223,15 @@ def init_tables(conn):
                  'PRIMARY KEY (wiki_sha1, content_sha1))')
 
 
+def _reshaped(info, path: Path) -> bool:
+    """线上文件与本地文件的像素尺寸不同。线上没给出尺寸时当作相同。"""
+    size = info.get('size')
+    if not size or not all(size):
+        return False
+    with Image.open(path) as image:
+        return image.size != tuple(size)
+
+
 def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=16) -> dict:
     """为待更新图标查线上文件并做判定，结果写回状态库；返回统计。"""
     from image_state import _load_exempt, set_uploaded
@@ -212,9 +241,14 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
             "SELECT i.icon_name, i.content_sha1, i.uploaded_sha1 FROM images i "
             "LEFT JOIN visual_checks v ON v.wiki_sha1=i.uploaded_sha1 AND v.content_sha1=i.content_sha1 "
             "WHERE i.icon_state='待更新' AND v.same IS NULL").fetchall()
+        # 只靠黑名单算作已上传的图也要看线上尺寸：帧数或帧尺寸变了就不能再沿用旧文件。
+        listed = conn.execute(
+            "SELECT i.icon_name, i.content_sha1, i.uploaded_sha1 FROM images i "
+            "WHERE i.icon_state='已上传' AND i.uploaded_sha1 != i.content_sha1").fetchall()
+    rows += [row for row in listed if row[0] in exempt]
     rows = [row for row in rows if row[0] in current_icons]
-    stats = {'pending': len(rows), 'onWiki': 0, 'sameBytes': 0, 'exempt': 0, 'visualSame': 0, 'changed': 0,
-             'notOnWiki': 0, 'failed': 0}
+    stats = {'pending': len(rows), 'onWiki': 0, 'sameBytes': 0, 'exempt': 0, 'reshaped': 0, 'visualSame': 0,
+             'changed': 0, 'notOnWiki': 0, 'failed': 0}
     if not rows:
         return stats
     print(f'Checking {len(rows):,} pending icons against the wiki', flush=True)
@@ -228,9 +262,14 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
             info = files.get(name)
             if info is None:
                 continue
+            reshaped = info['sha1'] != content and name in exempt and _reshaped(info, Path(icons_dir) / name)
+            if reshaped:
+                conn.execute('INSERT OR IGNORE INTO reshaped VALUES (?, ?)', (info['sha1'], content))
             set_uploaded(conn, name, info['sha1'])
             if info['sha1'] == content:
                 stats['sameBytes'] += 1
+            elif reshaped:
+                stats['reshaped'] += 1
             elif name in exempt:
                 stats['exempt'] += 1
             else:
@@ -240,7 +279,7 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
         name, content, info = task
         try:
             remote = download(info['url'], info['sha1'], cache_dir)
-            return name, content, info['sha1'], visually_same(remote, (Path(icons_dir) / name).read_bytes())
+            return name, content, info['sha1'], same_picture(name, remote, (Path(icons_dir) / name).read_bytes())
         except Exception as error:  # noqa: BLE001 - 单张失败保留待更新，下次重试
             print(f'  compare failed {name}: {error}', flush=True)
             return name, content, info['sha1'], None

@@ -147,6 +147,65 @@ class DumperHashPlanTest(unittest.TestCase):
             self.assertEqual(plan['uploadIcons'], ['a.png', 'a_w.png'])
 
 
+def strip(colors, size=16):
+    """每种颜色一帧的横向帧条。"""
+    image = Image.new('RGBA', (size * len(colors), size), (0, 0, 0, 0))
+    for index, color in enumerate(colors):
+        image.paste(color, (index * size, 0, (index + 1) * size, size))
+    buffer = io.BytesIO()
+    image.save(buffer, 'PNG')
+    return buffer.getvalue()
+
+
+class AnimationRuleTest(unittest.TestCase):
+    RAMP = [(255, 2 * i, 0, 255) for i in range(128)]
+
+    def test_one_wrong_frame_in_a_long_strip_is_different(self):
+        broken = list(self.RAMP)
+        broken[42] = (255, 0, 0, 255)
+        # 整条缩到 32×32 时单个错帧被周围帧摊薄，逐帧比对才看得出来
+        self.assertTrue(image_check.visually_same(strip(broken), strip(self.RAMP)))
+        self.assertFalse(image_check.same_picture('a_dynamic.png', strip(broken), strip(self.RAMP)))
+
+    def test_invisible_difference_in_every_frame_is_same(self):
+        near = [(255, g + 1, 0, 255) for _, g, _, _ in self.RAMP]
+        self.assertTrue(image_check.same_picture('a_dynamic.png', strip(near), strip(self.RAMP)))
+
+    def test_frame_count_or_frame_size_change_is_different(self):
+        self.assertFalse(image_check.strips_same(strip(self.RAMP[:64]), strip(self.RAMP)))
+        self.assertFalse(image_check.strips_same(strip(self.RAMP, 32), strip(self.RAMP)))
+
+
+class ReshapedTest(unittest.TestCase):
+    setUp, tearDown, states = StateTest.setUp, StateTest.tearDown, StateTest.states
+
+    def test_blacklisted_icon_with_new_dimensions_becomes_pending(self):
+        from image_state import reshaped_icons
+        icons_dir = Path(self.tmp.name)
+        names = {'grown_dynamic.png', 'kept_dynamic.png'}
+        for name in names:
+            (icons_dir / name).write_bytes(strip([(1, 1, 1, 255)] * 4))
+        hashes = {name: 'L-' + name for name in names}
+        exempt = {name: 'unstable' for name in names}
+        update_state(self.db, names, {}, hashes, exempt)
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            for name in names:
+                set_uploaded(conn, name, 'W-' + name.split('_')[0], exempt)
+        self.assertEqual(set(self.states().values()), {'已上传'})
+        files = {'grown_dynamic.png': {'sha1': 'W-grown', 'url': 'g', 'size': (16, 16)},
+                 'kept_dynamic.png': {'sha1': 'W-kept', 'url': 'k', 'size': (64, 16)}}
+        with patch('image_check.wiki_files', return_value=files), \
+                patch('image_check.download', side_effect=AssertionError('blacklisted icons are not compared')):
+            stats = image_check.check_pending(self.db, icons_dir, names, exempt, icons_dir)
+        self.assertEqual((stats['reshaped'], stats['exempt']), (1, 1))
+        expected = {'grown_dynamic.png': '待更新', 'kept_dynamic.png': '已上传'}
+        self.assertEqual(self.states(), expected)
+        self.assertEqual(reshaped_icons(self.db), {'grown_dynamic.png'})
+        # 离线重算状态时结论不丢
+        update_state(self.db, names, {}, hashes, exempt)
+        self.assertEqual(self.states(), expected)
+
+
 class StabilityTest(unittest.TestCase):
     def test_unstable_list_only_grows(self):
         with tempfile.TemporaryDirectory() as tmp:

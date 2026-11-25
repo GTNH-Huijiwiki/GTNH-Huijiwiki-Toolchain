@@ -62,7 +62,7 @@ def update_inventory(offline=False):
     plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     redirects = plan['redirects']
     icons = set(plan['uploadIcons'])
-    exempt = kind_exempt(KIND, DUMPS_DIR)
+    exempt = kind_exempt(KIND)
     update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons, HASH_CACHE), exempt)
     print(f"Current icons: {len(icons):,}; current redirects: {len(redirects):,}; exempt: {len(exempt):,}")
     if not offline:
