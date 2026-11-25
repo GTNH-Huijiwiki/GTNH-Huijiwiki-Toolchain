@@ -227,6 +227,9 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 `forestryTemperatureZh`、`forestryHumidityZh`。群系按 ID → 英文名加书页码 → 唯一的英文名匹配；缺中文名的会列出来，补进配置即可。
 这份配置最初取自人工整理的 `Data:生物群系.json`（已由本目录的数据取代）。
 
+RWG1（类名 `rwg.*`，ID 200–237）与 RWG2（`rwg2.*`，ID 300–329）有一批英文名相同的群系。整合包默认的世界类型用 RWG2，
+它的中文名不加括注，RWG1 的加“（RWG1）”。两代都要按 ID 配置：少了 RWG1 的条目，它会按英文名匹配拿到 RWG2 的名字。
+
 ## 成就与奖杯（Achievements）
 
 `python split_all.py achievements` 读 GTNH-Dumper 的 `achievements.json`，默认任务包含它，只有 `MOD_LOCAL_NAME=GTNH` 处理：
