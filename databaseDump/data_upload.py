@@ -384,6 +384,7 @@ def selected(title: str, only: frozenset) -> bool:
 def main(argv=None):
     require_scope(WIKI_PREFIX)
     args = sys.argv[1:] if argv is None else argv
+    gscope.apply_cli_flag(args)
     only = only_directories(args)
     debug = "--debug" in args
     threads = DEFAULT_THREADS

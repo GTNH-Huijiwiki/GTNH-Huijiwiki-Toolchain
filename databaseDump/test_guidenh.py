@@ -716,5 +716,28 @@ class WritePagesTest(unittest.TestCase):
             self.assertTrue((directory / 'gregtech' / 'index.wikitext').exists())
 
 
+
+class ParseOptionTest(unittest.TestCase):
+    def test_values(self):
+        for value, expected in (('', True), ('1', True), ('On', True), ('0', False), ('false', False), ('no', False)):
+            with patch.dict(os.environ, {'GUIDENH_PARSE': value}):
+                self.assertEqual(scope.parse_enabled(), expected, value)
+        with patch.dict(os.environ, {'GUIDENH_PARSE': 'flase'}):
+            with self.assertRaises(ValueError):
+                scope.parse_enabled()
+
+    def test_flag_overrides_env_and_disables_every_entry_point(self):
+        with patch.dict(os.environ, {'GUIDENH_PARSE': '1', 'MOD_LOCAL_NAME': 'GTNH'}):
+            scope.apply_cli_flag(['items'])
+            self.assertTrue(scope.enabled())
+            title = f'{scope.title_prefix()}mod/page'
+            self.assertTrue(data_upload.is_guidenh(title))
+            scope.apply_cli_flag(['items', '--no-guidenh'])
+            self.assertFalse(scope.enabled())
+            self.assertFalse(data_upload.is_guidenh(title))
+            with patch.object(guidenh, 'sync_repository', side_effect=AssertionError('must not read the pack')):
+                self.assertFalse(guidenh.item_page_index())
+                guidenh.run('unused', 'unused')
+
 if __name__ == '__main__':
     unittest.main()

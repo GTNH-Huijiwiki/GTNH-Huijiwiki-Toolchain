@@ -292,6 +292,18 @@ wikitext/Data/Versions/<远端模组名>/<版本>/
 `python split_all.py guidenh` 把 [GTNH-Guide-Pack](https://github.com/GTNewHorizons/GTNH-Guide-Pack)（GuideNH 的内容包；GuideNH 是面向 Minecraft 1.7.10 的游戏内指南框架）里的**中文**指南转成维基页面，默认全流程会执行。
 只有 `MOD_LOCAL_NAME=GTNH` 处理；没有配置内容包仓库时跳过。内容包采用 CC BY-NC-SA 4.0，每页页首都带来源、版本和许可说明。
 
+### 是否解析
+
+默认解析。在 `.env` 设 `GUIDENH_PARSE=0`，或给脚本加 `--no-guidenh`（只影响这一次）可以整个关掉：
+
+| 脚本 | 关掉后 |
+|---|---|
+| `split_all.py` | 不读内容包：跳过 `guidenh` 任务，`items` 也不写物品的 `guidenhPages` |
+| `wiki_inventory.py`、`data_upload.py` | 不扫描、不上传、不删除指南页面和指南导航框模块 |
+
+注意 `items` 在关掉解析（或开着解析但读不到内容包）时生成的物品数据不带 `guidenhPages`，上传后会抹掉线上已有的指南关联。
+只是不想生成或上传指南页面时：切分保持解析开启，任务列表里不写 `guidenh`；清单和上传加 `--no-guidenh`。
+
 ### 配置（`.env`）
 
 | 配置项 | 含义 |
