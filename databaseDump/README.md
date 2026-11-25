@@ -211,6 +211,25 @@ Thaumcraft、dreamcraft、KekzTech 等基础包模组和缺少来源字段的旧
 数组名仍为 `abbreviatedName`；其余字段（维度 ID、Provider 参数、`galacticSpaceInfo` 等）和 `key` 原样保留。
 旧版 Dumper 的 `{"abbreviatedName": [...]}` 原样通过。字段含义见 GTNH-Dumper README 的“维度与星系参数”。
 
+## 数据黑名单（导出扰动）
+
+同一整合包、同一导出器两次导出，仍有少量内容 GTNH-Dumper 固定不了（神秘时代按配方推算的要素、Mob Info 读到的
+暮色森林生成群系等）。`config/data_unstable.json` 列出这些记录和字段，`split_all.py` 切分时处理（只对
+`MOD_LOCAL_NAME=GTNH`），日志里以“数据黑名单:”开头：
+
+- `keep` / `keepFile`：沿用记下的值。值记在 `source_state/GTNH/<版本>/stable/`（不提交仓库），第一次切分某个版本时记录。
+- `keepOrder`：沿用记下的顺序，内容照常更新。
+- `sort`：列表按固定顺序排列。
+
+换了新版本会重新记录，不会带上旧版本的值。同一版本内这些字段即使真有变化也不会更新：删掉对应的状态文件即可接受新值。
+别的机器要和线上保持一致，先用线上页面对应的那份导出记录一次：
+
+```bash
+python data_stability.py seed <dumps 目录> <版本>
+```
+
+名单只依据实际比对结果添加：用同一份代码导出两次，比较两份 `dumps`，把确认固定不了的记录写进规则。
+
 ## 生物群系（Biomes）
 
 `python split_all.py biomes` 读 GTNH-Dumper 的 `biomes.json`，默认任务包含它，只有 `MOD_LOCAL_NAME=GTNH` 处理：

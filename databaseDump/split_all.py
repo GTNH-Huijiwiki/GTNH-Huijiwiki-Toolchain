@@ -27,6 +27,7 @@ import guidenh_scope as gscope
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_array_pages, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
+import data_stability
 
 # Ensure real-time progress output
 sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
@@ -64,6 +65,13 @@ REFERENCE_DUMPS_DIR = DUMPS_DIR
 if DUMPS_DIR and local_mod_name():
     DUMPS_DIR = str(source_directory(DUMPS_DIR, local_mod_name(), check_exists=False))
 AUX_DIR = os.path.dirname(os.path.abspath(__file__))
+# 数据黑名单记下的值；只在按配置处理 GTNH 本体数据时设置（见 data_stability.py）。
+STABLE_DIR = None
+
+
+def stabilized(relative: str, data):
+    """按数据黑名单沿用上次的值（config/data_unstable.json）。"""
+    return data if STABLE_DIR is None else data_stability.apply(relative, data, STABLE_DIR)
 
 
 def reference_path(name: str) -> str:
@@ -710,7 +718,7 @@ def do_items(debug: bool):
     size_mb = os.path.getsize(path) / 1024 / 1024
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
-        data = json.load(stream)
+        data = stabilized("advitempanel.json", json.load(stream))
     items = [item for item in data["shortKey"] if exclusion_policy().keep_item(item)]
     print(f"  Total: {len(items):,} items")
     del data
@@ -1156,7 +1164,7 @@ def do_items_tabx(debug: bool):
     size_mb = os.path.getsize(path) / 1024 / 1024
     print(f"  Loading {path} ({size_mb:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
-        data = json.load(stream)
+        data = stabilized("advitempanel.json", json.load(stream))
     items = [item for item in data["shortKey"] if exclusion_policy().keep_item(item)]
     del data
 
@@ -1857,7 +1865,7 @@ def do_biomes(debug: bool):
     if not path.is_file() or not path.stat().st_size:
         print(f"  跳过缺失或空的群系输入: {path}")
         return
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = stabilized("biomes.json", json.loads(path.read_text(encoding="utf-8")))
     # 同一群系对象可能占群系数组的多个槽位（如 ID 160），按 ID 只保留第一条，旧版 Dumper 的导出也适用。
     seen_ids = set()
     biomes = [biome for biome in data["biomes"] if not (biome["id"] in seen_ids or seen_ids.add(biome["id"]))]
@@ -1942,7 +1950,7 @@ def do_entities(debug: bool):
     if not source.is_file():
         print(f"  跳过缺失的实体输入: {source}")
         return
-    entities = json.loads(source.read_text(encoding="utf-8")).get("entities", [])
+    entities = stabilized("entities.json", json.loads(source.read_text(encoding="utf-8"))).get("entities", [])
     if not entities:
         print(f"  跳过空的实体输入: {source}")
         return
@@ -2413,6 +2421,7 @@ def do_recipes(debug: bool):
         except Exception as e:
             print(f"    Error: {e}")
             continue
+        data = stabilized(os.path.relpath(fp, DUMPS_DIR), data)
 
         recipes, dropped = exclusion_policy().filter_recipes(
             [r for r in data.get("recipes", []) if isinstance(r, dict)])
@@ -2569,7 +2578,7 @@ def _rename_all():
 
 def configure_source(require_source: bool = True):
     """配置当前模组的数据源；单独处理研究时允许从完整表按来源提取。"""
-    global DUMPS_DIR, REFERENCE_DUMPS_DIR, VERSION_TAG, VERSION, AUX_DIR
+    global DUMPS_DIR, REFERENCE_DUMPS_DIR, VERSION_TAG, VERSION, AUX_DIR, STABLE_DIR
     VERSION_TAG = version_tag(required=True)
     mod, version = VERSION_TAG.split("/")
     local_mod = local_mod_name(required=True)
@@ -2584,6 +2593,8 @@ def configure_source(require_source: bool = True):
     # NBT 判断依赖当前模组的配方，不能复用其他模组的扫描缓存。
     AUX_DIR = os.path.join(_PROJECT_ROOT, "databaseDump", "source_state", local_mod, version)
     os.makedirs(AUX_DIR, exist_ok=True)
+    # 名单里的记录来自 GTNH 本体的导出；其他模组的过滤导出不适用。
+    STABLE_DIR = os.path.join(AUX_DIR, "stable") if local_mod == "GTNH" else None
 
 
 def main():
