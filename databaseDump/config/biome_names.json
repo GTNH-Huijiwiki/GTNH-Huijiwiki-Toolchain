@@ -1766,7 +1766,132 @@
   },
   {
    "name": "Ice River",
-   "zh": "冰河（RWG2）",
+   "zh": "冰河（RWG1）",
+   "id": 200
+  },
+  {
+   "name": "Cold River",
+   "zh": "寒冷河流（RWG1）",
+   "id": 202
+  },
+  {
+   "name": "Temperate River",
+   "zh": "温带河流（RWG1）",
+   "id": 205
+  },
+  {
+   "name": "Hot River",
+   "zh": "炎热河流（RWG1）",
+   "id": 207
+  },
+  {
+   "name": "Wet River",
+   "zh": "潮湿河流（RWG1）",
+   "id": 209
+  },
+  {
+   "name": "River Oasis",
+   "zh": "绿洲河流（RWG1）",
+   "id": 211
+  },
+  {
+   "name": "Ice Ocean",
+   "zh": "冰洋（RWG1）",
+   "id": 213
+  },
+  {
+   "name": "Cold Ocean",
+   "zh": "寒冷海洋（RWG1）",
+   "id": 214
+  },
+  {
+   "name": "Temperate Ocean",
+   "zh": "温带海洋（RWG1）",
+   "id": 216
+  },
+  {
+   "name": "Hot Ocean",
+   "zh": "炎热海洋（RWG1）",
+   "id": 218
+  },
+  {
+   "name": "Ocean Oasis",
+   "zh": "海洋绿洲（RWG1）",
+   "id": 223
+  },
+  {
+   "name": "Snow Desert",
+   "zh": "降雪沙漠（RWG1）",
+   "id": 224
+  },
+  {
+   "name": "Snow Forest",
+   "zh": "降雪森林（RWG1）",
+   "id": 225
+  },
+  {
+   "name": "Cold Plains",
+   "zh": "冰冷平原（RWG1）",
+   "id": 226
+  },
+  {
+   "name": "Cold Forest",
+   "zh": "寒冷森林（RWG1）",
+   "id": 227
+  },
+  {
+   "name": "Hot Plains",
+   "zh": "炎热平原（RWG1）",
+   "id": 228
+  },
+  {
+   "name": "Hot Forest",
+   "zh": "炎热森林（RWG1）",
+   "id": 229
+  },
+  {
+   "name": "Hot Desert",
+   "zh": "炎热沙漠（RWG1）",
+   "id": 230
+  },
+  {
+   "name": "Plains (RWG)",
+   "zh": "平原（RWG1）",
+   "id": 231
+  },
+  {
+   "name": "Tropical Island",
+   "zh": "热带岛屿（RWG1）",
+   "id": 232
+  },
+  {
+   "name": "Redwood",
+   "zh": "红杉林（RWG1）",
+   "id": 233
+  },
+  {
+   "name": "Jungle (RWG)",
+   "zh": "丛林（RWG1）",
+   "id": 234
+  },
+  {
+   "name": "Oasis",
+   "zh": "绿洲（RWG1）",
+   "id": 235
+  },
+  {
+   "name": "Temperate Forest",
+   "zh": "温带森林（RWG1）",
+   "id": 236
+  },
+  {
+   "name": "Wet Ocean",
+   "zh": "潮湿海洋（RWG1）",
+   "id": 237
+  },
+  {
+   "name": "Ice River",
+   "zh": "冰河",
    "id": 300,
    "bookPages": [
     251,
@@ -1775,7 +1900,7 @@
   },
   {
    "name": "Cold River",
-   "zh": "寒冷河流（RWG2）",
+   "zh": "寒冷河流",
    "id": 301,
    "bookPages": [
     75,
@@ -1784,7 +1909,7 @@
   },
   {
    "name": "Temperate River",
-   "zh": "温带河流（RWG2）",
+   "zh": "温带河流",
    "id": 302,
    "bookPages": [
     76,
@@ -1793,7 +1918,7 @@
   },
   {
    "name": "Hot River",
-   "zh": "炎热河流（RWG2）",
+   "zh": "炎热河流",
    "id": 303,
    "bookPages": [
     225,
@@ -1802,7 +1927,7 @@
   },
   {
    "name": "Wet River",
-   "zh": "潮湿河流（RWG2）",
+   "zh": "潮湿河流",
    "id": 304,
    "bookPages": [
     317
@@ -1810,7 +1935,7 @@
   },
   {
    "name": "River Oasis",
-   "zh": "绿洲河流（RWG2）",
+   "zh": "绿洲河流",
    "id": 305,
    "bookPages": [
     318
@@ -1818,7 +1943,7 @@
   },
   {
    "name": "Ice Ocean",
-   "zh": "冰洋（RWG2）",
+   "zh": "冰洋",
    "id": 306,
    "bookPages": [
     12,
@@ -1828,7 +1953,7 @@
   },
   {
    "name": "Cold Ocean",
-   "zh": "寒冷海洋（RWG2）",
+   "zh": "寒冷海洋",
    "id": 307,
    "bookPages": [
     13,
@@ -1838,7 +1963,7 @@
   },
   {
    "name": "Temperate Ocean",
-   "zh": "温带海洋（RWG2）",
+   "zh": "温带海洋",
    "id": 308,
    "bookPages": [
     14,
@@ -1848,7 +1973,7 @@
   },
   {
    "name": "Hot Ocean",
-   "zh": "炎热海洋（RWG2）",
+   "zh": "炎热海洋",
    "id": 309,
    "bookPages": [
     15,
@@ -1858,7 +1983,7 @@
   },
   {
    "name": "Wet Ocean",
-   "zh": "潮湿海洋（RWG2）",
+   "zh": "潮湿海洋",
    "id": 310,
    "bookPages": [
     16,
@@ -1867,7 +1992,7 @@
   },
   {
    "name": "Ocean Oasis",
-   "zh": "海洋绿洲（RWG2）",
+   "zh": "海洋绿洲",
    "id": 311,
    "bookPages": [
     17,
@@ -1876,7 +2001,7 @@
   },
   {
    "name": "Snow Desert",
-   "zh": "降雪沙漠（RWG2）",
+   "zh": "降雪沙漠",
    "id": 312,
    "bookPages": [
     253,
@@ -1885,7 +2010,7 @@
   },
   {
    "name": "Snow Forest",
-   "zh": "降雪森林（RWG2）",
+   "zh": "降雪森林",
    "id": 313,
    "bookPages": [
     79,
@@ -1894,7 +2019,7 @@
   },
   {
    "name": "Cold Plains",
-   "zh": "冰冷平原（RWG2）",
+   "zh": "冰冷平原",
    "id": 314,
    "bookPages": [
     291
@@ -1902,7 +2027,7 @@
   },
   {
    "name": "Cold Forest",
-   "zh": "寒冷森林（RWG2）",
+   "zh": "寒冷森林",
    "id": 315,
    "bookPages": [
     80,
@@ -1912,7 +2037,7 @@
   },
   {
    "name": "Hot Plains",
-   "zh": "炎热平原（RWG2）",
+   "zh": "炎热平原",
    "id": 316,
    "bookPages": [
     184
@@ -1920,7 +2045,7 @@
   },
   {
    "name": "Hot Forest",
-   "zh": "炎热森林（RWG2）",
+   "zh": "炎热森林",
    "id": 317,
    "bookPages": [
     185
@@ -1928,7 +2053,7 @@
   },
   {
    "name": "Hot Desert",
-   "zh": "炎热沙漠（RWG2）",
+   "zh": "炎热沙漠",
    "id": 318,
    "bookPages": [
     227
@@ -1936,7 +2061,7 @@
   },
   {
    "name": "Plains (RWG)",
-   "zh": "平原（RWG）（RWG2）",
+   "zh": "平原",
    "id": 319,
    "bookPages": [
     186
@@ -1944,12 +2069,12 @@
   },
   {
    "name": "Tropical Island",
-   "zh": "热带岛屿（RWG2）",
+   "zh": "热带岛屿",
    "id": 320
   },
   {
    "name": "Redwood",
-   "zh": "红杉林（RWG2）",
+   "zh": "红杉林",
    "id": 321,
    "bookPages": [
     81
@@ -1957,12 +2082,12 @@
   },
   {
    "name": "Jungle (RWG)",
-   "zh": "丛林（RWG2）",
+   "zh": "丛林",
    "id": 322
   },
   {
    "name": "Oasis",
-   "zh": "绿洲（RWG2）",
+   "zh": "绿洲",
    "id": 323,
    "bookPages": [
     206
@@ -1970,7 +2095,7 @@
   },
   {
    "name": "Temperate Forest",
-   "zh": "温带森林（RWG2）",
+   "zh": "温带森林",
    "id": 324,
    "bookPages": [
     207
@@ -1978,7 +2103,7 @@
   },
   {
    "name": "Jungle Mesa",
-   "zh": "丛林平顶山（RWG2）",
+   "zh": "丛林平顶山",
    "id": 325,
    "bookPages": [
     82,
@@ -1987,7 +2112,7 @@
   },
   {
    "name": "High Rainforest",
-   "zh": "高地雨林（RWG2）",
+   "zh": "高地雨林",
    "id": 326,
    "bookPages": [
     83,
@@ -1996,7 +2121,7 @@
   },
   {
    "name": "Jungle Hills",
-   "zh": "丛林丘陵（RWG2）",
+   "zh": "丛林丘陵",
    "id": 327,
    "bookPages": [
     84,
@@ -2005,7 +2130,7 @@
   },
   {
    "name": "Jungle Canyon",
-   "zh": "丛林峡谷（RWG2）",
+   "zh": "丛林峡谷",
    "id": 328,
    "bookPages": [
     85,
@@ -2014,7 +2139,7 @@
   },
   {
    "name": "Redwood Jungle",
-   "zh": "红杉丛林（RWG2）",
+   "zh": "红杉丛林",
    "id": 329,
    "bookPages": [
     86,

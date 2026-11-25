@@ -1,0 +1,164 @@
+{
+ "description": "数据黑名单：同一整合包、同一导出器两次导出仍可能不同的内容（GTNH-Dumper 固定不了的部分）。keep：列出记录的字段沿用本机第一次切分该版本时记下的值；keepFile：整份文件沿用；keepOrder：记录沿用记下的顺序，内容照常更新；sort：列出记录里的列表按固定顺序排列。记下的值在 source_state/<模组>/<版本>/stable/，删掉即重新记录。见 data_stability.py。",
+ "rules": [
+  {
+   "mode": "keep",
+   "file": "advitempanel.json",
+   "records": "shortKey",
+   "key": "shortKey",
+   "fields": [
+    "aspect"
+   ],
+   "keys": [
+    "IC2NuclearControl:networkLink",
+    "ae2fc:fluid_buffer",
+    "ae2fc:ingredient_buffer",
+    "ae2fc:large_ingredient_buffer",
+    "ae2fc:level_maintainer",
+    "ae2fc:part_level_terminal",
+    "ae2fc:wireless_ultra_terminal",
+    "ae2fc:wireless_ultra_terminal_JpKtzZ5mzvVoe6b",
+    "ae2fc:wireless_ultra_terminal_S9LJrbnftQQkMqL",
+    "ae2fc:wireless_ultra_terminal_SzekNzUZe2jAUlI",
+    "ae2fc:wireless_ultra_terminal_gLuB0gegBqh1aRe",
+    "ae2wct:wirelessCraftingTerminal",
+    "ae2wct:wirelessCraftingTerminal_JuOyMOcRDXJSjDf",
+    "ae2wct:wirelessCraftingTerminal_gLuB0gegBqh1aRe",
+    "appliedenergistics2:item.ItemMultiMaterial:16",
+    "appliedenergistics2:item.ItemMultiMaterial:23",
+    "appliedenergistics2:item.ItemMultiMaterial:25",
+    "appliedenergistics2:item.ItemMultiMaterial:29",
+    "appliedenergistics2:item.ItemMultiMaterial:31",
+    "appliedenergistics2:item.ItemMultiMaterial:53",
+    "appliedenergistics2:item.ItemMultiMaterial:64",
+    "appliedenergistics2:item.ItemMultiMaterial:68",
+    "appliedenergistics2:item.ToolAdvancedNetworkTool",
+    "appliedenergistics2:item.ToolMemoryCard",
+    "appliedenergistics2:item.ToolMemoryCard_gLuB0gegBqh1aRe",
+    "appliedenergistics2:item.ToolNetworkTool",
+    "appliedenergistics2:item.ToolNetworkVisualiser",
+    "appliedenergistics2:item.ToolNetworkVisualiser_gLuB0gegBqh1aRe",
+    "appliedenergistics2:tile.BlockCharger",
+    "appliedenergistics2:tile.BlockCraftingUnit",
+    "appliedenergistics2:tile.BlockCrystalGrowthChamber",
+    "appliedenergistics2:tile.BlockQuartzGrowthAccelerator",
+    "appliedenergistics2:tile.BlockWireless",
+    "betterp2p:advanced_memory_card",
+    "betterp2p:advanced_memory_card_TteLjILsB8XBfOO",
+    "botanichorizons:automatedAlchemyPool",
+    "gadomancy:BlockEssentiaCompressor",
+    "gadomancy:ItemElement",
+    "gregtech:gt.blockmachines:15551",
+    "gregtech:gt.blockmachines:234",
+    "gregtech:gt.blockmachines:254",
+    "gregtech:gt.blockmachines:2730",
+    "gregtech:gt.blockmachines:274",
+    "gregtech:gt.blockmachines:374",
+    "gregtech:gt.blockmachines:504",
+    "gregtech:gt.blockmachines:514",
+    "gregtech:gt.blockmachines:524",
+    "gregtech:gt.blockmachines:534",
+    "gregtech:gt.blockmachines:544",
+    "gregtech:gt.blockmachines:574",
+    "gregtech:gt.blockmachines:584",
+    "gregtech:gt.blockmachines:624",
+    "thaumicenergistics:golem.wifi.backpack",
+    "thaumicenergistics:knowledge.core",
+    "thaumicenergistics:part.base:5",
+    "thaumicenergistics:storage.essentia:4",
+    "thaumicenergistics:storage.essentia:4_gLuB0gegBqh1aRe",
+    "thaumicenergistics:thaumicenergistics.block.knowledge.inscriber"
+   ],
+   "reason": "神秘时代按配方推算的要素，结果取决于推算顺序"
+  },
+  {
+   "mode": "keep",
+   "file": "advitempanel.json",
+   "records": "shortKey",
+   "key": "shortKey",
+   "fields": [
+    "tooltips",
+    "tooltipsShift",
+    "tooltipsCtrl",
+    "tooltipsShiftAndCtrl"
+   ],
+   "keys": [
+    "appliedenergistics2:item.ItemMultiMaterial:27",
+    "appliedenergistics2:item.ItemMultiMaterial:29",
+    "appliedenergistics2:item.ItemMultiMaterial:53"
+   ],
+   "reason": "AE2 升级卡支持列表按哈希顺序"
+  },
+  {
+   "mode": "keep",
+   "file": "entities.json",
+   "records": "entities",
+   "key": "id",
+   "fields": [
+    "mobsInfo.spawnBiomes"
+   ],
+   "keys": [
+    "Enderman",
+    "Skeleton",
+    "TwilightForest.King Spider",
+    "TwilightForest.Mist Wolf",
+    "TwilightForest.Skeleton Druid",
+    "TwilightForest.Twilight Kobold",
+    "Witch",
+    "Zombie",
+    "enderzoo.ConcussionCreeper",
+    "enderzoo.Enderminy",
+    "enderzoo.WitherWitch"
+   ],
+   "reason": "Mob Info 启动时读暮色森林群系的怪物表，拿到哪张是随机的"
+  },
+  {
+   "mode": "keep",
+   "file": "recipes/mobsinfo/MobHandler_mobhandler.json",
+   "records": "recipes",
+   "key": "inputItems",
+   "fields": [
+    "spawnList"
+   ],
+   "keys": [
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"Enderman\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"Enderman\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"Enderman\\\"}\"},\"minecraft:spawn_egg:58\",\"minecraft:mob_spawner:58\"]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"Skeleton\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"Skeleton\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"Skeleton\\\"}\"},\"minecraft:spawn_egg:51\",\"minecraft:mob_spawner:51\"]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.King Spider\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"TwilightForest.King Spider\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.King Spider\\\"}\"}]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.Mist Wolf\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"TwilightForest.Mist Wolf\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.Mist Wolf\\\"}\"}]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.Skeleton Druid\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"TwilightForest.Skeleton Druid\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.Skeleton Druid\\\"}\"}]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.Twilight Kobold\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"TwilightForest.Twilight Kobold\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"TwilightForest.Twilight Kobold\\\"}\"}]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"Witch\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"Witch\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"Witch\\\"}\"},\"minecraft:spawn_egg:66\",\"minecraft:mob_spawner:66\"]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"Zombie\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"Zombie\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"Zombie\\\"}\"},\"minecraft:spawn_egg:54\",\"minecraft:mob_spawner:54\"]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"enderzoo.ConcussionCreeper\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"enderzoo.ConcussionCreeper\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"enderzoo.ConcussionCreeper\\\"}\"},\"minecraft:spawn_egg:6\",\"minecraft:mob_spawner:6\"]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"enderzoo.Enderminy\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"enderzoo.Enderminy\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"enderzoo.Enderminy\\\"}\"},\"minecraft:spawn_egg:5\",\"minecraft:mob_spawner:5\"]",
+    "[{\"key\":\"EnderIO:blockPoweredSpawner\",\"nbt\":\"{mobType:\\\"enderzoo.WitherWitch\\\",eio.abstractMachine:1b}\"},{\"key\":\"EnderIO:itemSoulVessel\",\"nbt\":\"{isStub:1b,id:\\\"enderzoo.WitherWitch\\\"}\"},{\"key\":\"EnderIO:itemBrokenSpawner\",\"nbt\":\"{mobType:\\\"enderzoo.WitherWitch\\\"}\"},\"minecraft:spawn_egg:24\",\"minecraft:mob_spawner:24\"]"
+   ],
+   "reason": "同上"
+  },
+  {
+   "mode": "keepFile",
+   "file": "recipes/Thaumcraft/ItemsContainingAspectHandler_items_containing_aspect.json",
+   "reason": "包含要素的物品分页随推算要素变化"
+  },
+  {
+   "mode": "keepOrder",
+   "file": "recipes/Thaumcraft/InfusionRecipeHandler_infusion.json",
+   "records": "recipes",
+   "reason": "神秘工匠部分注魔配方的注册顺序随机"
+  },
+  {
+   "mode": "sort",
+   "file": "biomes.json",
+   "records": "biomes",
+   "key": "id",
+   "fields": [
+    "spawns.monster"
+   ],
+   "keys": [
+    171,
+    172
+   ],
+   "reason": "暮色黑森林两个群系合并后的怪物表顺序随启动而变"
+  }
+ ]
+}
