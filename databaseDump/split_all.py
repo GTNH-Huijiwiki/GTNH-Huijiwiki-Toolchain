@@ -22,7 +22,7 @@ from pathlib import Path
 from data_version import addon_mods, local_mod_name, source_directory, version_module_title, version_tag
 from item_names import build_artifacts, image_name_config, read_items, write_item_name_index
 from nbt_identity import nbt_identity
-from item_exclusions import fluid_names, load_policy, rewrite_fluids
+from item_exclusions import convert_fluid_displays, fluid_names, load_policy
 import guidenh_scope as gscope
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_array_pages, write_bounded
@@ -2417,9 +2417,8 @@ def do_recipes(debug: bool):
         recipes, dropped = exclusion_policy().filter_recipes(
             [r for r in data.get("recipes", []) if isinstance(r, dict)])
         excluded_recipes.update(dropped)
-        # NEI 的流体展示物品不进物品表，配方里的引用改指向流体。
-        _, found = rewrite_fluids(recipes, fluids, unresolved_fluids)
-        rewritten_fluids += found
+        # NEI 的流体展示物品不进物品表，配方里的引用改为流体格。
+        rewritten_fluids += convert_fluid_displays(recipes, fluids, unresolved_fluids)
         if not recipes:
             if any(isinstance(r, dict) for r in data.get("recipes", [])):
                 subdir = os.path.splitext(os.path.relpath(fp, recipes_dir))[0]
@@ -2456,7 +2455,7 @@ def do_recipes(debug: bool):
 
     associations.write_report()
     print(f"  [Exclusions] {sum(excluded_recipes.values()):,} recipes left out: {dict(excluded_recipes)}")
-    print(f"  [Exclusions] {rewritten_fluids:,} NEI fluid references rewritten to fluids")
+    print(f"  [Exclusions] {rewritten_fluids:,} NEI fluid references turned into fluid slots")
     if unresolved_fluids:
         print(f"  WARNING: {len(unresolved_fluids)} NEI fluid references without a fluid: {sorted(unresolved_fluids)[:10]}")
 

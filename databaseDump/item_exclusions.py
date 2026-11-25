@@ -314,6 +314,58 @@ def rewrite_fluids(value, names, unresolved):
     return value, count
 
 
+def _is_fluid_slot(slot):
+    """A slot that only holds NEI fluid displays (one, or alternatives)."""
+    if isinstance(slot, list):
+        return bool(slot) and all(_is_fluid_slot(entry) for entry in slot)
+    if isinstance(slot, dict):
+        slot = slot.get('rawKey') or slot.get('key')
+    return isinstance(slot, str) and split_key(slot)[0] == NEI_FLUID
+
+
+def _as_fluid(entry):
+    """A rewritten reference in the shape of a fluid slot."""
+    if isinstance(entry, list):
+        return [_as_fluid(child) for child in entry]
+    entry = {'key': entry} if isinstance(entry, str) else dict(entry)
+    if 'amount' in entry:
+        entry['showAmount'] = True
+    return entry
+
+
+def convert_fluid_displays(recipes, names, unresolved):
+    """Turn NEI fluid displays into fluid slots, in place. Returns the number of references converted.
+
+    A slot that holds only NEI displays moves from inputItems/outputItems to inputFluids/outputFluids, so the
+    remaining item slots keep the positions the recipe layouts expect. Anywhere else the key is rewritten in place.
+    """
+    count = 0
+    for recipe in recipes:
+        for items_field, fluids_field in (('inputItems', 'inputFluids'), ('outputItems', 'outputFluids')):
+            slots = recipe.get(items_field)
+            if not isinstance(slots, list) or not any(_is_fluid_slot(slot) for slot in slots):
+                continue
+            kept, moved = [], []
+            for slot in slots:
+                if not _is_fluid_slot(slot):
+                    kept.append(slot)
+                    continue
+                before = len(unresolved)
+                converted, found = rewrite_fluids(slot, names, unresolved)
+                count += found
+                if len(unresolved) > before:
+                    # Without a fluid name the reference stays where it was, so nothing is silently lost.
+                    kept.append(converted)
+                else:
+                    moved.append(_as_fluid(converted))
+            recipe[items_field] = kept
+            if moved:
+                recipe[fluids_field] = list(recipe.get(fluids_field) or []) + moved
+        _, found = rewrite_fluids(recipe, names, unresolved)
+        count += found
+    return count
+
+
 def read_documents(*roots):
     seen = set()
     for root in roots:
