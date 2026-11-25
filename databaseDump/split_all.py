@@ -22,7 +22,7 @@ from pathlib import Path
 from data_version import addon_mods, local_mod_name, source_directory, version_module_title, version_tag
 from item_names import build_artifacts, image_name_config, read_items, write_item_name_index
 from nbt_identity import nbt_identity
-from item_exclusions import load_policy
+from item_exclusions import fluid_names, load_policy, rewrite_fluids
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_array_pages, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
@@ -2392,6 +2392,8 @@ def do_recipes(debug: bool):
     print(f"  Found {len(json_files)} file(s)")
 
     associations = _RecipeAssociations()
+    fluids = fluid_names(_load_fluid_map().values()) if os.path.isfile(reference_path("fluid.json")) else {}
+    excluded_recipes, rewritten_fluids, unresolved_fluids = Counter(), 0, set()
     for fi, fp in enumerate(json_files):
         if debug and fi >= 3:
             print(f"\n  [DEBUG] Processed 3 files, skipping rest.")
@@ -2404,7 +2406,12 @@ def do_recipes(debug: bool):
             print(f"    Error: {e}")
             continue
 
-        recipes = [r for r in data.get("recipes", []) if isinstance(r, dict) and exclusion_policy().keep_recipe(r)]
+        recipes, dropped = exclusion_policy().filter_recipes(
+            [r for r in data.get("recipes", []) if isinstance(r, dict)])
+        excluded_recipes.update(dropped)
+        # NEI 的流体展示物品不进物品表，配方里的引用改指向流体。
+        _, found = rewrite_fluids(recipes, fluids, unresolved_fluids)
+        rewritten_fluids += found
         if not recipes:
             if any(isinstance(r, dict) for r in data.get("recipes", [])):
                 subdir = os.path.splitext(os.path.relpath(fp, recipes_dir))[0]
@@ -2440,6 +2447,10 @@ def do_recipes(debug: bool):
         print(f"    Done: {total:,} recipes -> {page_count} file(s)")
 
     associations.write_report()
+    print(f"  [Exclusions] {sum(excluded_recipes.values()):,} recipes left out: {dict(excluded_recipes)}")
+    print(f"  [Exclusions] {rewritten_fluids:,} NEI fluid references rewritten to fluids")
+    if unresolved_fluids:
+        print(f"  WARNING: {len(unresolved_fluids)} NEI fluid references without a fluid: {sorted(unresolved_fluids)[:10]}")
 
 
 
