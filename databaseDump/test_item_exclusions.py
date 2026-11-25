@@ -1,8 +1,8 @@
 import unittest
 import tempfile
 from pathlib import Path
-from item_exclusions import (ExclusionPolicy, excluded_icons, fluid_names, identity, is_restyle, item_family,
-                             quest_item_keys, rewrite_fluids)
+from item_exclusions import (ExclusionPolicy, convert_fluid_displays, excluded_icons, fluid_names, identity,
+                             is_restyle, item_family, quest_item_keys)
 
 def item(key,tag='{}',short=None):
     return dict(key=key,nbt=tag,shortKey=short or key)
@@ -70,13 +70,25 @@ class ExclusionsTest(unittest.TestCase):
         self.assertFalse(policy.keep_item(patterned));self.assertTrue(policy.keep_item(item('etfuturum:banner')))
         self.assertEqual(policy.filter_recipes([recipe]),([],{'patterned_banners':1}))
 
-    def test_nei_fluid_references_become_fluids(self):
-        names=fluid_names([dict(key='fluid.molten.gold',gtDisplayKey='gregtech:gt.GregTech_FluidDisplay:462')])
-        recipes=[dict(inputItems=[dict(key='NotEnoughItems:neiFluidDisplay:462',nbt='{neiFluidDisplayAmount:144L}'),['NotEnoughItems:neiFluidDisplay:462','minecraft:stone']],outputItems=['NotEnoughItems:neiFluidDisplay:7'])]
+    def test_nei_fluid_displays_become_fluid_slots(self):
+        names=fluid_names([dict(key='fluid.molten.gold',gtDisplayKey='gregtech:gt.GregTech_FluidDisplay:462'),
+                           dict(key='fluid.water',gtDisplayKey='gregtech:gt.GregTech_FluidDisplay:1')])
+        gold=dict(key='NotEnoughItems:neiFluidDisplay:462',nbt='{neiFluidDisplayAmount:144L}')
+        casting=dict(inputItems=[gold,'minecraft:emerald'],outputItems=['TConstruct:metalPattern:26'])
+        alloy=dict(inputItems=[dict(gold),['NotEnoughItems:neiFluidDisplay:1','NotEnoughItems:neiFluidDisplay:462']],
+                   outputItems=[dict(gold)],inputFluids=[dict(key='fluid.lava',amount=5)])
+        mixed=dict(inputItems=[['NotEnoughItems:neiFluidDisplay:1','minecraft:stone']],outputItems=['NotEnoughItems:neiFluidDisplay:7'])
         unresolved=set()
-        _,count=rewrite_fluids(recipes,names,unresolved)
-        self.assertEqual(count,2)
-        self.assertEqual(recipes[0]['inputItems'],[dict(key='fluid.molten.gold',amount=144),['fluid.molten.gold','minecraft:stone']])
+        self.assertEqual(convert_fluid_displays([casting,alloy,mixed],names,unresolved),6)
+        shown=dict(key='fluid.molten.gold',amount=144,showAmount=True)
+        self.assertEqual(casting['inputItems'],['minecraft:emerald'])
+        self.assertEqual(casting['inputFluids'],[shown])
+        self.assertEqual(alloy['inputItems'],[])
+        self.assertEqual(alloy['inputFluids'],[dict(key='fluid.lava',amount=5),shown,[dict(key='fluid.water'),dict(key='fluid.molten.gold')]])
+        self.assertEqual((alloy['outputItems'],alloy['outputFluids']),([],[shown]))
+        self.assertEqual(mixed['inputItems'],[['fluid.water','minecraft:stone']])
+        self.assertEqual(mixed['outputItems'],['NotEnoughItems:neiFluidDisplay:7'])
+        self.assertNotIn('outputFluids',mixed)
         self.assertEqual(unresolved,{'NotEnoughItems:neiFluidDisplay:7'})
         self.assertFalse(ExclusionPolicy([],[]).keep_item(item('NotEnoughItems:neiFluidDisplay:462')))
 

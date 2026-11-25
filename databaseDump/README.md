@@ -133,7 +133,7 @@ Dumper 忠实导出游戏里的内容，哪些不进维基只在工具链决定�
 | 匠魂弩箭 | 每个配方文件、每种箭头只留箭杆材料编号最小的一条配方；物品只留被保留配方或任务书用到的，某种箭头一个都没有时留一个 |
 | Ztones 换样式配方（ofanix ＋ 同一方块） | 去掉这类配方，方块保留 |
 | 装了流体的容量瓶（GT 与 GT++ 共 4 种）和水晶容器 | 去掉；配方或任务书用到的具体物品保留。这一项从不删配方。空容器、通用流体单元、GT 流体展示物品保留 |
-| NEI 自带的流体展示物品 `NotEnoughItems:neiFluidDisplay` | 全部去掉；配方里的引用原位改成 `fluid.<名称>`，数量是毫桶数 |
+| NEI 自带的流体展示物品 `NotEnoughItems:neiFluidDisplay` | 全部去掉；只放流体的格子从 `inputItems` / `outputItems` 移到 `inputFluids` / `outputFluids`，key 为 `fluid.<名称>`，数量是毫桶数（配方界面按固体格的顺序摆位，流体留在固体格里会挤掉铸模） |
 
 任务书只按 `betterquesting/itemKeys.json` 里的图标、要求物品和奖励保护；`taskMatches` 不算，
 忽略 NBT 的任务会接受一种物品的全部变体。成就、魔导手册和维基手写页面的引用不在保护范围内。
