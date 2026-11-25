@@ -462,7 +462,7 @@ class ImageKindTest(unittest.TestCase):
                 (state / 'images' / 'GuideNH_a.png').unlink()
                 with self.assertRaises(ValueError):
                     image_kinds.kind_plan('guidenh', str(state), None)
-            self.assertEqual(image_kinds.kind_exempt('guidenh', str(state)), {})
+            self.assertEqual(image_kinds.kind_exempt('guidenh'), {})
             self.assertEqual(image_kinds.kind_unstable('guidenh'), set())
             self.assertIn('guidenh', image_kinds.KINDS)
 
