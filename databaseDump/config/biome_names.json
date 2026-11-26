@@ -1,5 +1,5 @@
 {
- "description": "群系中文名、BiomeDictionary 标签与林业气候的中文译名。游戏里没有这些翻译，最初取自人工整理的 Data:生物群系.json（2026-11-03 核对）。群系匹配顺序：群系 ID → 英文名加生态之书页码 → 唯一的英文名。新群系缺译名时拆分会列出，补在这里。 2026-11-21 起按 GTNH 2.9.0 导出补上了群系 ID。",
+ "description": "群系中文名与 BiomeDictionary 标签的中文译名。游戏里没有这些翻译，最初取自人工整理的 Data:生物群系.json（2026-11-03 核对）。群系匹配顺序：群系 ID → 英文名加生态之书页码 → 唯一的英文名。新群系缺译名时拆分会列出，补在这里。 2026-11-21 起按 GTNH 2.9.0 导出补上了群系 ID。",
  "biomes": [
   {
    "name": "Ocean",
@@ -2176,18 +2176,5 @@
   "SWAMP": "沼泽",
   "WASTELAND": "废土",
   "WET": "潮湿"
- },
- "forestryTemperature": {
-  "ICY": "严寒",
-  "COLD": "寒冷",
-  "NORMAL": "一般",
-  "WARM": "温暖",
-  "HOT": "炙热",
-  "HELLISH": "地狱"
- },
- "forestryHumidity": {
-  "ARID": "干旱",
-  "NORMAL": "一般",
-  "DAMP": "潮湿"
  }
 }
