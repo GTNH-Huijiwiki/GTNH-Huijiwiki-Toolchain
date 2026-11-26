@@ -242,8 +242,8 @@ python data_stability.py seed <dumps 目录> <版本>
 
 | `Biomes/Dimensions/0.json` | `method`（Dumper 的采样方法：种子、范围）与数组 `dimensions`，每个维度一条：`dimensionId`、可生成的群系 ID `biomes`、管理器来源 `chunkManagerSource`（`world-type` 的维度群系不可靠，线上不展示）、取不到时的原因 `errors`。读 `dimensionbiomes.json`（Dumper 的 `dimensionbiomes` 任务），文件不存在时跳过；线上按 `dimensionId` 与 `gtnhdimension` 关联 |
 
-游戏里没有群系名、标签和林业气候的中文，拆分时从 `config/biome_names.json` 补 `nameZh`、`typesZh`、
-`forestryTemperatureZh`、`forestryHumidityZh`。群系按 ID → 英文名加书页码 → 唯一的英文名匹配；缺中文名的会列出来，补进配置即可。
+游戏里没有群系名和标签的中文，拆分时从 `config/biome_names.json` 补 `nameZh`、`typesZh`；林业气候的中文
+`forestryTemperatureZh`、`forestryHumidityZh` 用游戏里的译名（`biomes.json` 的 `forestryClimates`）。群系按 ID → 英文名加书页码 → 唯一的英文名匹配；缺中文名的会列出来，补进配置即可。
 这份配置最初取自人工整理的 `Data:生物群系.json`（已由本目录的数据取代）。
 
 RWG1（类名 `rwg.*`，ID 200–237）与 RWG2（`rwg2.*`，ID 300–329）有一批英文名相同的群系。整合包默认的世界类型用 RWG2，
@@ -271,6 +271,32 @@ RWG1（类名 `rwg.*`，ID 200–237）与 RWG2（`rwg2.*`，ID 300–329）有�
 只有 `MOD_LOCAL_NAME=GTNH` 处理。每条记录以 EntityList 注册名 `id` 为键，字段见 GTNH-Dumper README 的“实体”一节
 （名称、来源模组、类别、基础属性、MobsInfo 的精英怪/灵魂瓶/生成来源/掉落、Ender IO 电动刷怪笼）。
 群系刷怪表只存实体 `id`，线上（`模块:实体`）按 id 查名称，不在其他表里重复写名称。
+
+## 蜜蜂（Bees）
+
+`python split_all.py bees` 读 GTNH-Dumper `bees` 任务的 `bees/*.json`，写 `Bees/<表>/N.json`，默认任务包含它，只有 `MOD_LOCAL_NAME=GTNH` 处理。
+游戏里读得到的内容都放进来，同一内容只存一处：**物品只记 key**（名称、图标查物品表），**气候只记 id**
+（与群系记录同一套，中文名查 `Biomes/Tags`）。游戏里没有、靠人读代码写的说明（比如特殊效果的实际作用）留在维基页面上。
+
+| 目录 | 页内数组 | 内容 |
+|---|---|---|
+| `Species` | `beeSpecies` | `uid`、中英文名、拉丁学名、作者、游戏内描述、分类 `branch`、气候 id、颜色、显隐性与各项标记、研究复杂度、欣喜条件、产物与特产（物品 key、数量、基础概率）、基因组模板（染色体 → 等位基因 uid）、这个蜂种有哪些蜂类物品，查物品表的 `beeSpecies` |
+| `Mutations` | `beeMutations` | 亲本、子代、基础概率（百分数，未乘养蜂模式与蜂箱修正）、附加条件原文 |
+| `Alleles` | `beeAlleles` | 等位基因中英文名、所属染色体、数值（工作速度、寿命、范围等） |
+| `Branches` | `beeBranches` | 分类树节点 |
+| `Frames` | `beeFrames` | 框架对杂交、寿命、产量等的倍率、耐久与提示文字 |
+| `Flowers` | `beeFlowers` | 每类采蜜对象认的方块（可种植的权重大于 0）；靠代码判断的规则只能列出类名 |
+| `Hives` | `beeHives` | 野生蜂巢掉落（物种、权重、附带物品）；Forestry 注册的蜂巢另有生成概率与适宜群系 id |
+| `Meta` | `beeMeta` | 染色体顺序、世界的养蜂模式与全部模式的倍率、研究催化物 |
+
+引用到但物品表里没有的 key，以及指向不存在的物种/等位基因的引用，切分时会打印 WARNING。
+
+### 蜂类物品的身份
+
+所有蜂后是同一个物品（公主蜂、雄蜂、幼虫也是），蜂种只在 NBT 的基因组里。Dumper 给物品表和配方里的蜂类物品写
+`beeSpecies`（蜂种 uid，与上面各表同一套）和 `beeType`（`QUEEN` / `PRINCESS` / `DRONE` / `LARVAE`），工具链原样保留。
+只按 `beeSpecies` 查得到一个蜂种的全部蜂类物品。配方里的蜂找不到完全一致的物品时，按这两个字段找展示物品；找不到或不唯一时
+`displayKey` 为 `unresolved-bee:<类型>`，条目仍带这两个字段。缺身份或与基础物品对不上的列在诊断里。
 
 ## 任务书（Questbook）
 
@@ -623,7 +649,7 @@ python item_names.py generate-preferred --items-dir <预处理的Items目录> \
 
 - `keys`：最终完整 key 数组，保留同名候选和 NBT 变体。
 - `rawKeys`：去重的基础身份数组，包含注册名和 damage，用于配方输出分桶及单产物查询的变体合并。与 `keys` 相同时省略。
-- `queryKeys`：可选的 `{"完整key":"语义queryKey"}` 映射，例如蜜蜂物种身份。
+- `beeIdentities`：蜂类物品才有的 `{"完整key":{"beeSpecies":蜂种uid,"beeType":类型}}` 映射。
 - `sourceHandlers`：能获得该名称物品的处理器列表。
 - `usageHandlers`：用途条目列表；字符串表示整个处理器，`[handler, [编号...]]` 表示该输入名称涉及的桶号或普通文件号。
 
@@ -640,7 +666,7 @@ handler 使用 `Recipes` 下的完整 `mod/handler` 路径。同名候选的路�
 锻造锤的 `shared/` 页随数字桶一起读取；`[handler, []]` 表示该名称仅涉及 shared 配方。
 桶内全部分页参与查询；普通文件号交集为空时返回空结果。名称索引、最终配方文件和版本配置同步更新。
 
-同一名称可以跨页，各页数组和 `queryKeys` 映射合并后再使用；若合并后的记录没有 `rawKeys`，则采用 `keys`。
+同一名称可以跨页，各页数组和 `beeIdentities` 映射合并后再使用；若合并后的记录没有 `rawKeys`，则采用 `keys`。
 默认每页最多 1,800,000 字节，最终检查计入所有字段和标点的 UTF-8 字节数，硬上限为 2,000,000 字节。
 Lua 查询一次读取命中名称桶的所有分页，使用 `$objectToArray` 按名称字面值筛选，支持名称中的点号和 `$`。
 精确名称转换同时取得 handler；多个输入的用途列表与多个输出的来源列表按版本取交集，填写 `type` 时再与指定处理器范围相交。
@@ -677,7 +703,7 @@ python split_all.py items recipes --recipe-buckets
 范围固定为有序合成、无序合成、匠魂弩箭固化、匠魂部件压模、组装机、合金炉回收、流体固化器、锻造锤
 这八个主要 handler，并且只在当前来源已拆成多个文件时处理。其他 handler 保留原文件。
 输入为关联完成后的产物 `rawKey`，缺省时使用产物 `key`；同一注册名和 damage 的 NBT 变体共用一个逻辑桶。
-完整 `key`、NBT 和 `queryKey` 原样保存在配方中，供精确匹配与显示使用。
+完整 `key`、NBT 和蜂类的 `beeSpecies`、`beeType` 原样保存在配方中，供精确匹配与显示使用。
 单输出槽允许物品或流体；嵌套候选须归约为同一个路由身份。
 锻造锤的多输出配方单独写入该 handler 的 `shared/<页>.json`；查询锻造锤时同时读取目标桶与 shared 目录的全部数字分块。
 其余七个 handler 若出现多输出、`otherItems` 或无可识别输出，整池保留原文件，诊断写入 manifest。

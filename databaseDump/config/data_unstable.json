@@ -83,11 +83,26 @@
     "tooltipsShiftAndCtrl"
    ],
    "keys": [
+    "Railcraft:machine.alpha:15",
     "appliedenergistics2:item.ItemMultiMaterial:27",
     "appliedenergistics2:item.ItemMultiMaterial:29",
-    "appliedenergistics2:item.ItemMultiMaterial:53"
+    "appliedenergistics2:item.ItemMultiMaterial:53",
+    "dreamcraft:QuantumBread",
+    "kubatech:kubaitems:12"
    ],
    "reason": "AE2 升级卡支持列表按哈希顺序"
+  },
+  {
+   "mode": "keep",
+   "file": "advitempanel.json",
+   "records": "shortKey",
+   "key": "shortKey",
+   "fields": [
+    "translatedName"
+   ],
+   "keys": [
+    "dreamcraft:QuantumBread"
+   ]
   },
   {
    "mode": "keep",

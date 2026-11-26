@@ -2,7 +2,7 @@ import json
 import unittest
 from pathlib import Path
 
-from split_all import dimension_biomes_page, localize_biomes
+from split_all import dimension_biomes_page, localize_biomes, with_climate_names
 
 NAMES = {'biomes': [{'name': 'Oasis', 'zh': '绿洲', 'bookPages': [219]},
                     {'name': 'Oasis', 'zh': '绿洲（RWG2）', 'id': 323},
@@ -25,6 +25,14 @@ class LocalizeBiomesTest(unittest.TestCase):
         self.assertEqual(missing, ['Oasis', 'Jungle'])
         self.assertEqual(biomes[3]['typesZh'], ['平原', 'NEW'])
         self.assertEqual((biomes[3]['forestryTemperatureZh'], biomes[3]['forestryHumidityZh']), ('一般', '干旱'))
+
+
+class ClimateNamesTest(unittest.TestCase):
+    def test_climate_names_come_from_the_export(self):
+        names = with_climate_names({'types': {}}, {'forestryClimates': {'temperature': {'NORMAL': '普通'},
+                                                                       'humidity': {'ARID': '干旱'}}})
+        self.assertEqual((names['forestryTemperature'], names['forestryHumidity']),
+                         ({'NORMAL': '普通'}, {'ARID': '干旱'}))
 
 
 class ConfiguredRwgNamesTest(unittest.TestCase):

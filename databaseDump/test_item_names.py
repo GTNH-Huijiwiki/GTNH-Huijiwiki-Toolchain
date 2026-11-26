@@ -121,30 +121,32 @@ class NameRoutingTests(unittest.TestCase):
     def test_name_records_merge_all_fields_across_pages(self):
         keys = [f"Forestry:beePrincessGE_variant{i:03d}" for i in range(30)]
         name = "$森林.公主蜂"
-        semantic = {key: "bee:PRINCESS:forestry.speciesForest" for key in keys}
+        bees = {key: ("forestry.speciesForest", "PRINCESS") for key in keys}
+        identity = {"beeSpecies": "forestry.speciesForest", "beeType": "PRINCESS"}
+        identities = {key: identity for key in keys}
         raw = "Forestry:beePrincessGE"
         handlers = {"sourceHandlers": {name: ["forestry/bees", "minecraft/crafting"]},
                     "usageHandlers": {name: ["forestry/breeding", ["minecraft/crafting", [0, 3, 15]]]}}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            self.assertGreater(write_name_index({name: keys}, root, 220, query_keys=semantic,
+            self.assertGreater(write_name_index({name: keys}, root, 300, bees=bees,
                                raw_keys={key: raw for key in keys}, handlers=handlers), 1)
-            merged = {"keys": [], "rawKeys": [], "queryKeys": {}, "sourceHandlers": [], "usageHandlers": []}
+            merged = {"keys": [], "rawKeys": [], "beeIdentities": {}, "sourceHandlers": [], "usageHandlers": []}
             for path in sorted(root.rglob('*.json'), key=lambda p: int(p.stem)):
-                self.assertLessEqual(path.stat().st_size, 220)
+                self.assertLessEqual(path.stat().st_size, 300)
                 page = json.loads(path.read_bytes())
                 self.assertEqual(set(page), {'bucketCount', 'names'})
                 for field, value in page['names'][name].items():
-                    if field == 'queryKeys':
+                    if field == 'beeIdentities':
                         merged[field].update(value)
                     else:
                         merged[field].extend(value)
-            self.assertEqual(merged, {'keys': keys, 'rawKeys': [raw], 'queryKeys': semantic,
+            self.assertEqual(merged, {'keys': keys, 'rawKeys': [raw], 'beeIdentities': identities,
                                      **{field: values[name] for field, values in handlers.items()}})
 
     def test_build_artifacts_groups_query_identities_under_name(self):
         item = {'key': 'Forestry:beePrincessGE_variant', 'translatedName': '森林公主蜂',
-                'rawKey': 'Forestry:beePrincessGE', 'queryKey': 'bee:PRINCESS:forest',
+                'rawKey': 'Forestry:beePrincessGE', 'beeSpecies': 'forest', 'beeType': 'PRINCESS',
                 'nbt': '{Genome:{...}}', 'tooltips': '完整物品说明'}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -153,29 +155,30 @@ class NameRoutingTests(unittest.TestCase):
             page = json.loads(next((root / 'version/ItemNames').rglob('*.json')).read_bytes())
             self.assertEqual(page, {'bucketCount': 1, 'names': {'森林公主蜂': {
                 'keys': [item['key']], 'rawKeys': [item['rawKey']],
-                'queryKeys': {item['key']: item['queryKey']}}}})
+                'beeIdentities': {item['key']: {'beeSpecies': 'forest', 'beeType': 'PRINCESS'}}}}})
 
     def test_plain_item_omits_redundant_raw_and_empty_fields(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             write_name_index({'石头': ['minecraft:stone']}, root,
                              raw_keys={'minecraft:stone': 'minecraft:stone'},
-                             query_keys={'minecraft:stone': '', 'unused': 'identity'})
+                             bees={'minecraft:stone': None, 'unused': ('forest', 'DRONE')})
             page = json.loads(next(root.rglob('*.json')).read_bytes())
             self.assertEqual(page, {'bucketCount': 1, 'names': {'石头': {'keys': ['minecraft:stone']}}})
 
     def test_index_exact_byte_limit_and_oversized_field(self):
         from bounded_json import encode_json, HARD_MAX_BYTES
-        key, name, semantic = 'Forestry:beePrincessGE_variant', '森林公主蜂', 'bee:PRINCESS:forest'
-        page = {'bucketCount': 1, 'names': {name: {'keys': [key], 'queryKeys': {key: semantic}}}}
+        key, name, bee = 'Forestry:beePrincessGE_variant', '森林公主蜂', ('forest', 'PRINCESS')
+        identity = {'beeSpecies': 'forest', 'beeType': 'PRINCESS'}
+        page = {'bucketCount': 1, 'names': {name: {'keys': [key], 'beeIdentities': {key: identity}}}}
         exact = len(encode_json(page))
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            self.assertEqual(write_name_index({name: [key]}, root, exact, query_keys={key: semantic}), 1)
+            self.assertEqual(write_name_index({name: [key]}, root, exact, bees={key: bee}), 1)
             self.assertEqual(next(root.rglob('*.json')).stat().st_size, exact)
-            self.assertEqual(write_name_index({name: [key]}, root, exact - 1, query_keys={key: semantic}), 2)
+            self.assertEqual(write_name_index({name: [key]}, root, exact - 1, bees={key: bee}), 2)
             with self.assertRaisesRegex(ValueError, '单条名称'):
-                write_name_index({name: [key]}, root, HARD_MAX_BYTES, query_keys={key: '中' * 700000})
+                write_name_index({name: [key]}, root, HARD_MAX_BYTES, bees={key: ('中' * 700000, 'DRONE')})
 
     def test_handlers_include_ores_semantics_raw_outputs_and_other_items(self):
         from name_recipes import collect_handlers
@@ -185,7 +188,8 @@ class NameRoutingTests(unittest.TestCase):
                 'OreDictionary/0.json': {'oreA': ['mod:a'], 'oreWildcard': ['mod:block:32767']},
                 'Recipes/mod/craft.json': {'recipes': [
                     {'inputItems': [['#oreA']], 'outputItems': [{'key': 'mod:variant', 'rawKey': 'mod:base'}]},
-                    {'inputItems': ['semantic:a'], 'otherItems': ['mod:other']},
+                    {'inputItems': [{'key': 'variant', 'beeSpecies': 'a', 'beeType': 'QUEEN'}],
+                     'otherItems': ['mod:other']},
                     {'inputItems': ['#oreWildcard']},
                 ]},
                 'Recipes/mod/second/00/0.json': {'recipes': [{'outputItems': ['mod:a']}]},
@@ -197,7 +201,7 @@ class NameRoutingTests(unittest.TestCase):
                 path.write_text(json.dumps(content), 'utf-8')
             result = collect_handlers({'甲': ['mod:a'], '乙': ['mod:known'], '丙': ['mod:other'],
                                        '方块': ['mod:block:2']},
-                                      {'mod:known': 'mod:base'}, {'mod:a': 'semantic:a'}, root)
+                                      {'mod:known': 'mod:base'}, {'mod:a': ('a', 'QUEEN')}, root)
             self.assertEqual(result['sourceHandlers'], {'甲': ['mod/second'], '乙': ['mod/craft'], '丙': ['mod/craft']})
             self.assertEqual(result['usageHandlers'], {'甲': ['mod/craft'], '丙': ['mod/craft'], '方块': ['mod/craft']})
 
@@ -269,9 +273,9 @@ class NameRoutingTests(unittest.TestCase):
                 f'Recipes/{shaped}/00/0.json': {'routing': {'bucketCount': 16}, 'recipes': [
                     {'inputItems': [['#oreA', '#tool']], 'outputItems': ['mod:a']}]},
                 f'Recipes/{shaped}/00/1.json': {'routing': {'bucketCount': 16}, 'recipes': [
-                    {'inputItems': [{'key': 'variant', 'queryKey': 'semantic:b'}]}]},
+                    {'inputItems': [{'key': 'variant', 'beeSpecies': 'b', 'beeType': 'DRONE'}]}]},
                 f'Recipes/{shaped}/03/0.json': {'routing': {'bucketCount': 16}, 'recipes': [
-                    {'inputItems': ['semantic:b']}]},
+                    {'inputItems': [{'key': 'other', 'beeSpecies': 'b', 'beeType': 'DRONE'}]}]},
                 f'Recipes/{hammer}/shared/0.json': {'routing': {'bucketCount': 2}, 'recipes': [
                     {'inputItems': ['mod:shared']}]},
                 f'Recipes/{extruding}/01/0.json': {'routing': {'bucketCount': 2}, 'recipes': [
@@ -283,7 +287,7 @@ class NameRoutingTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(data), 'utf8')
             handlers = collect_handlers({'同名': ['mod:a', 'mod:b'], '工具': ['mod:tool:2'],
-                                         '副产物配方输入': ['mod:shared']}, {}, {'mod:b': 'semantic:b'}, root)
+                                         '副产物配方输入': ['mod:shared']}, {}, {'mod:b': ('b', 'DRONE')}, root)
             self.assertEqual(handlers['usageHandlers']['同名'],
                              [assembler, extruding, [shaped, [0, 3]]])
             self.assertEqual(handlers['usageHandlers']['工具'], [[shaped, [0]]])
@@ -305,7 +309,7 @@ class NameRoutingTests(unittest.TestCase):
                     {'inputItems': ['mod:c', 'mod:common'], 'inputFluids': ['fluid:a'],
                      'otherItems': ['mod:aux'], 'keyItem': 'mod:key'}]},
                 f'Recipes/{macerator}/12.json': {'recipes': [
-                    {'inputItems': [{'key': 'variant', 'queryKey': 'semantic:b'}, 'mod:common']}]},
+                    {'inputItems': [{'key': 'variant', 'beeSpecies': 'b', 'beeType': 'DRONE'}, 'mod:common']}]},
                 f'Recipes/{assembler}/0.json': {'recipes': [{'inputItems': ['mod:a']}]},
                 f'Recipes/{integration}/0.json': {'recipes': [{'inputItems': ['mod:a']}]},
                 f'Recipes/{integration}/1.json': {'recipes': [{'inputItems': ['mod:c']}]},
@@ -316,7 +320,7 @@ class NameRoutingTests(unittest.TestCase):
                 path.write_text(json.dumps(data), 'utf8')
             names = {'同名': ['mod:a', 'mod:b'], '工具': ['mod:tool:2'], '其他': ['mod:c'],
                      '全文件': ['mod:common'], '流体': ['fluid:a'], '辅助': ['mod:aux'], '关键': ['mod:key']}
-            result = collect_handlers(names, {}, {'mod:b': 'semantic:b'}, root)
+            result = collect_handlers(names, {}, {'mod:b': ('b', 'DRONE')}, root)
             self.assertEqual(result['usageHandlers']['同名'], [integration, assembler, [macerator, [0, 12]]])
             self.assertEqual(result['usageHandlers']['全文件'], [macerator])
             self.assertEqual(result['usageHandlers']['工具'], [[macerator, [0]]])
@@ -324,7 +328,7 @@ class NameRoutingTests(unittest.TestCase):
                 self.assertEqual(result['usageHandlers'][name], [[macerator, [3]]])
             self.assertEqual(result['sourceHandlers']['同名'], [macerator])
             (root / f'Recipes/{macerator}/0.json').rename(root / f'Recipes/{macerator}/7.json')
-            refreshed = collect_handlers(names, {}, {'mod:b': 'semantic:b'}, root)
+            refreshed = collect_handlers(names, {}, {'mod:b': ('b', 'DRONE')}, root)
             self.assertEqual(refreshed['usageHandlers']['同名'], [integration, assembler, [macerator, [7, 12]]])
 
     def test_existing_nbt_hash_and_unicode_bucket(self):
@@ -557,7 +561,7 @@ class NameRoutingTests(unittest.TestCase):
     def test_recipe_route_groups_nbt_outputs_and_preserves_exact_records(self):
         recipe = {"index": "0/0", "inputItems": [{"key": "input"}],
                   "outputItems": [[{"key": "exact_hash1", "rawKey": "example:item:3", "nbt": "{state:1}"},
-                                   {"key": "exact_hash2", "rawKey": "example:item:3", "queryKey": "bee:species"}]],
+                                   {"key": "exact_hash2", "rawKey": "example:item:3", "beeSpecies": "species", "beeType": "DRONE"}]],
                   "otherItems": []}
         self.assertEqual(bucket_id("example:item:3", 64), recipe_route(recipe, 64))
         self.assertEqual(bucket_id("fluid.water", 64), recipe_route({"outputFluids": [{"key": "fluid.water"}]}, 64))
@@ -616,7 +620,7 @@ class NameRoutingTests(unittest.TestCase):
         recipe = {"index": "0/0", "outputItems": [[{"key": "a_nbt", "rawKey": "a"},
                                                   {"key": "b_nbt", "rawKey": "b"}]]}
         self.assertIsNone(recipe_route(recipe, 64))
-        self.assertIsNone(recipe_route({"outputItems": [{"queryKey": "bee:species"}]}, 64))
+        self.assertIsNone(recipe_route({"outputItems": [{"beeSpecies": "species", "beeType": "DRONE"}]}, 64))
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             handler = "gregtech/GTNEIDefaultHandler_assembler"

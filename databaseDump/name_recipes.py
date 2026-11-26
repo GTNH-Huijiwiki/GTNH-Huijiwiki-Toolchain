@@ -3,6 +3,7 @@
 import json
 from collections import defaultdict
 from pathlib import Path
+from bee_identity import bee_identity
 
 
 SLOT_FIELDS = {
@@ -49,7 +50,7 @@ def entries(value):
             yield from entries(child)
 
 
-def collect_handlers(names, raw_keys, query_keys, version_dir):
+def collect_handlers(names, raw_keys, bees, version_dir):
     """收集来源和用途；输入定位复用 [handler, [桶号或文件号...]]。"""
     root = Path(version_dir)
     tokens, raw_names, wildcard_names = (defaultdict(set) for _ in range(3))
@@ -57,8 +58,8 @@ def collect_handlers(names, raw_keys, query_keys, version_dir):
         for key in keys:
             raw = raw_keys.get(key, key)
             tokens[key].add(name)
-            if query_keys.get(key):
-                tokens[query_keys[key]].add(name)
+            if bees.get(key):
+                tokens[bees[key]].add(name)  # (beeSpecies, beeType)
             raw_names[raw].add(name)
             base, separator, damage = raw.rpartition(":")
             wildcard_names[base if separator and damage.isdigit() else raw].add(name)
@@ -93,7 +94,7 @@ def collect_handlers(names, raw_keys, query_keys, version_dir):
                 matched = set()
                 for slot in slots:
                     for entry in entries(recipe.get(slot)):
-                        values = [entry] if isinstance(entry, str) else [entry.get("key"), entry.get("queryKey")]
+                        values = [entry] if isinstance(entry, str) else [entry.get("key"), bee_identity(entry)]
                         for token in values:
                             matched.update(tokens.get(token, ()))
                             if field == "sourceHandlers":

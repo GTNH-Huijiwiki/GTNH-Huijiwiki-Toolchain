@@ -347,20 +347,21 @@ class SplitOutputTests(unittest.TestCase):
 
     def test_nbt_association_reads_nested_tabx_bucket(self):
         items = [{"key": "example:bee_hash", "rawKey": "Forestry:beeDroneGE", "nbt": "{v:1}",
-                  "beeIdentity": {"speciesUid": "example.species", "type": "DRONE"}}]
+                  "beeSpecies": "example.species", "beeType": "DRONE"}]
         split_all.write_item_tables(items)
         output = self.version / "Recipes/example/handler"
         output.mkdir(parents=True)
         page = output / "0.json"
         page.write_bytes(encode_json({"recipes": [{"index": "0/0", "outputItems": [
-            {"key": "Forestry:beeDroneGE", "nbt": "{v:1}", "beeIdentity": items[0]["beeIdentity"]}]}]}))
+            {"key": "Forestry:beeDroneGE", "nbt": "{v:1}", "beeSpecies": "example.species",
+             "beeType": "DRONE"}]}]}))
         source = self.source / "recipes/example"
         source.mkdir(parents=True)
         (source / "handler.json").write_bytes(page.read_bytes())
         split_all.do_recipes(False)
         result = json.loads(page.read_bytes())["recipes"][0]["outputItems"][0]
         self.assertEqual(result["key"], "example:bee_hash")
-        self.assertEqual(result["queryKey"], "bee:DRONE:example.species")
+        self.assertEqual((result["beeSpecies"], result["beeType"]), ("example.species", "DRONE"))
         self.assertNotIn("nbt", result)
 
 

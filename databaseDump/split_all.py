@@ -25,6 +25,7 @@ from nbt_identity import nbt_identity
 from item_exclusions import convert_fluid_displays, fluid_names, load_policy
 import guidenh_scope as gscope
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
+from bee_identity import BEE_TYPES_BY_RAW_KEY, FIELDS as BEE_FIELDS, bee_identity
 from bounded_json import HARD_MAX_BYTES, DEFAULT_MAX_BYTES, array_pages, encode_json, write_array_pages, write_bounded
 from routing_hash import HASH_ALGORITHM, bucket_id, choose_bucket_count
 import data_stability
@@ -104,14 +105,6 @@ def clear_generated_pages(directory, suffixes, keep=()):
 MAX_FILE_SIZE = 1.8 * 1024 * 1024   # 旧分页估算目标；最终发布文件硬上限为 2,000,000 字节。
 INDEX_OVERHEAD = 30                  # "index": "99/99999"
 
-BEE_TYPES_BY_RAW_KEY = {
-    "Forestry:beeDroneGE": "DRONE",
-    "Forestry:beePrincessGE": "PRINCESS",
-    "Forestry:beeQueenGE": "QUEEN",
-    "Forestry:beeLarvaeGE": "LARVAE",
-}
-
-
 def wrapper_head(key: str) -> str:
     return '{\n  "' + key + '": [\n'
 
@@ -128,43 +121,23 @@ def serialize_item(item: dict) -> str:
     return json.dumps(item, ensure_ascii=False, indent=2)
 
 
-def _bee_query_key(identity) -> str | None:
-    """Return the stable species/type key exported by the dumper."""
-    if not isinstance(identity, dict):
-        return None
-    species_uid = identity.get("speciesUid")
-    bee_type = identity.get("type")
-    if not isinstance(species_uid, str) or not species_uid:
-        return None
-    if not isinstance(bee_type, str) or bee_type not in set(BEE_TYPES_BY_RAW_KEY.values()):
-        return None
-    return f"bee:{bee_type}:{species_uid}"
-
-
-def _add_bee_query_keys(items: list[dict]) -> None:
-    """Add queryKey without changing the exact NBT-derived item key."""
-    added = 0
+def _check_bee_identity(items: list[dict]) -> None:
+    """蜂类物品应带 Dumper 写的 beeSpecies 与 beeType；缺失或与物品对不上的列出来，并去掉对不上的字段。"""
+    found = 0
     incomplete = []
     for item in items:
-        identity = item.get("beeIdentity")
-        if identity is None:
-            continue
-        query_key = _bee_query_key(identity)
         raw_key = item.get("rawKey") or item.get("key")
-        expected_type = BEE_TYPES_BY_RAW_KEY.get(raw_key)
-        if not query_key or (expected_type and identity.get("type") != expected_type):
-            incomplete.append({
-                "key": item.get("key"),
-                "rawKey": raw_key,
-                "beeIdentity": identity,
-                "issue": "invalid_or_mismatched_bee_identity",
-            })
+        if raw_key not in BEE_TYPES_BY_RAW_KEY and not any(field in item for field in BEE_FIELDS):
             continue
-        item["queryKey"] = query_key
-        added += 1
-    print(f"  [Bee identity] Added queryKey to {added:,} item(s)")
+        if bee_identity(item, raw_key):
+            found += 1
+            continue
+        incomplete.append({"key": item.get("key"), "rawKey": raw_key,
+                           **{field: item.pop(field) for field in BEE_FIELDS if field in item}})
+    print(f"  [Bee identity] {found:,} bee item(s) with species and type")
     if incomplete:
-        print(f"  WARNING: {len(incomplete):,} item(s) have incomplete or mismatched bee identity")
+        # 没有基因组的蜂（空白物品）本来就没有身份。
+        print(f"  WARNING: {len(incomplete):,} bee item(s) without a usable identity")
         path = os.path.join(AUX_DIR, "bee_item_identity_diagnostics.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(incomplete, f, ensure_ascii=False, indent=2)
@@ -750,7 +723,7 @@ def do_items(debug: bool):
         elif sk:
             item["key"] = sk
 
-    _add_bee_query_keys(items)
+    _check_bee_identity(items)
 
     # ⑤b 修正 aspectrecipeindex:aspect 的 key：用 originalName 替换无意义的 NBT hash
     _fix_aspectrecipeindex_keys(items)
@@ -1195,7 +1168,7 @@ def do_items_tabx(debug: bool):
         elif sk:
             item["key"] = sk
 
-    _add_bee_query_keys(items)
+    _check_bee_identity(items)
 
     # ⑤b 修正 aspectrecipeindex:aspect 的 key：用 originalName 替换无意义的 NBT hash
     _fix_aspectrecipeindex_keys(items)
@@ -1818,6 +1791,13 @@ def localize_biomes(biomes, names) -> list:
     return missing
 
 
+def with_climate_names(names, data) -> dict:
+    """林业气候的中文用游戏里的（biomes.json 的 forestryClimates）；全库只在群系数据里存这一份。"""
+    climates = data.get("forestryClimates", {})
+    return {**names, "forestryTemperature": climates.get("temperature", {}),
+            "forestryHumidity": climates.get("humidity", {})}
+
+
 def biome_tags(biomes, names) -> dict:
     """标签页：BiomeDictionary 标签、林业温度与湿度各自的中文名和群系数，按游戏中的名字排序。"""
     def table(field, translations):
@@ -1852,7 +1832,7 @@ def do_biomes(debug: bool):
     Biomes/Tags/0.json（BiomeDictionary 标签与林业气候的中文及群系数）。
 
     群系记录保留 Dumper 的全部字段（温湿度、降水与降雪、高度、方块、BiomeDictionary 标签、林业气候、
-    IC2 作物加成、刷怪表、生态之书扩展版页码），另补中文名与标签、气候的中文（config/biome_names.json）。
+    IC2 作物加成、刷怪表、生态之书扩展版页码），另补中文名与标签的中文（config/biome_names.json）、气候的中文（游戏里的译名）。
     只有 GTNH 处理；附属模组和缺少输入时跳过。
     """
     print("=" * 50)
@@ -1869,7 +1849,7 @@ def do_biomes(debug: bool):
     # 同一群系对象可能占群系数组的多个槽位（如 ID 160），按 ID 只保留第一条，旧版 Dumper 的导出也适用。
     seen_ids = set()
     biomes = [biome for biome in data["biomes"] if not (biome["id"] in seen_ids or seen_ids.add(biome["id"]))]
-    names = json.loads(BIOME_NAMES_CONFIG.read_text(encoding="utf-8"))
+    names = with_climate_names(json.loads(BIOME_NAMES_CONFIG.read_text(encoding="utf-8")), data)
     missing = localize_biomes(biomes, names)
     root = Path(VERSION) / "Biomes"
     output = root / "List"
@@ -1960,6 +1940,36 @@ def do_entities(debug: bool):
         clear_generated_pages(output, {".json"}, keep=written)
     living = sum(1 for entity in entities if "health" in entity)
     print(f"  {len(entities):,} entities ({living:,} living) -> {len(written)} file(s)")
+
+
+def do_bees(debug: bool):
+    """bees/*.json -> Bees/<表>/N.json（蜂种、杂交、等位基因、分类、框架、蜂巢掉落）。只有 GTNH 处理。
+
+    物品只记 key；引用的 key 应都在物品表里，缺的会列出来。
+    """
+    print("=" * 50)
+    print("[Bees]")
+    print("=" * 50)
+    if local_mod_name() != "GTNH":
+        print("  跳过蜜蜂：只属于 GTNH 整合包")
+        return
+    source = Path(DUMPS_DIR) / "bees"
+    if not (source / "species.json").is_file():
+        print(f"  跳过缺失的蜜蜂输入: {source}")
+        return
+    import bees
+    tables = bees.load(source)
+    for problem in bees.check_references(tables):
+        print(f"  WARNING {problem}")
+    item_dir = Path(VERSION) / "Items"
+    if item_dir.is_dir():
+        known = {item["key"] for item in read_items(item_dir)}
+        missing = sorted(bees.referenced_items(tables) - known)
+        if missing:
+            print(f"  WARNING {len(missing)} 个引用的物品不在物品表里: {missing[:10]}")
+    counts = bees.write(tables, Path(VERSION))
+    for folder, field in bees.SECTIONS:
+        print(f"  [Bees/{folder}] {len(tables[field]):,} records -> {counts[folder]} file(s)")
 
 
 # 魔导手册各段：(输出子目录, tc4thaumonomicon.json 中的段名, 页内数组字段)。
@@ -2125,7 +2135,7 @@ def _iter_recipe_item_entries(value):
         for entry in value:
             yield from _iter_recipe_item_entries(entry)
     elif isinstance(value, dict):
-        if "key" in value or "beeIdentity" in value:
+        if "key" in value or "beeSpecies" in value:
             yield value
         else:
             for entry in value.values():
@@ -2181,9 +2191,9 @@ class _RecipeAssociations:
             _index_wildcard_item(item, wildcard_index, wildcard_nbt_index)
             if rk and sk and nbt:
                 nbt_index.setdefault((rk, nbt_identity(nbt)), set()).add(sk)
-            query_key = item.get("queryKey") or _bee_query_key(item.get("beeIdentity"))
-            if query_key and sk:
-                bee_index.setdefault(query_key, set()).add(sk)
+            identity = bee_identity(item, rk)
+            if identity and sk:
+                bee_index.setdefault(identity, set()).add(sk)
         print(
             f"  [NBT fix] Indexed {len(nbt_index)} exact NBT pair(s) and "
             f"{len(bee_index)} bee identity key(s)"
@@ -2249,22 +2259,18 @@ class _RecipeAssociations:
                     continue
                 original_key = key
                 expected_bee_type = BEE_TYPES_BY_RAW_KEY.get(key)
-                identity = item.get("beeIdentity")
-                query_key = _bee_query_key(identity)
-                if identity is not None or expected_bee_type:
-                    if not query_key or (expected_bee_type and identity.get("type") != expected_bee_type):
-                        self.diagnostics.append({
-                            "file": relative_file,
-                            "_recipe": recipe,
-                            "recipeIndex": recipe.get("index"),
-                            "slot": slot_key,
-                            "rawKey": key,
-                            "beeIdentity": identity,
-                            "issue": "missing_or_mismatched_identity_reexport_required",
-                        })
-                    else:
-                        item["queryKey"] = query_key
-                        modified = True
+                identity = bee_identity(item, key if expected_bee_type else None)
+                if identity is None and (expected_bee_type or any(field in item for field in BEE_FIELDS)):
+                    self.diagnostics.append({
+                        "file": relative_file,
+                        "_recipe": recipe,
+                        "recipeIndex": recipe.get("index"),
+                        "slot": slot_key,
+                        "rawKey": key,
+                        **{field: item.pop(field) for field in BEE_FIELDS if field in item},
+                        "issue": "missing_or_mismatched_identity_reexport_required",
+                    })
+                    modified = True
 
                 if not nbt:
                     continue
@@ -2280,12 +2286,9 @@ class _RecipeAssociations:
                     modified = True
                 elif len(exact_candidates) > 1:
                     item["associationError"] = "ambiguous_exact_item_association"
-                    item["displayKey"] = "unresolved-nbt:" + key
+                    item["displayKey"] = (f"unresolved-bee:{identity[1]}" if identity
+                                          else "unresolved-nbt:" + key)
                     modified = True
-                    if query_key:
-                        item["displayKey"] = query_key
-                        item["associationError"] = "ambiguous_exact_item_association"
-                        modified = True
                     self.diagnostics.append({
                         "file": relative_file,
                         "_recipe": recipe,
@@ -2300,8 +2303,8 @@ class _RecipeAssociations:
                     item["associationError"] = "missing_exact_nbt_item"
                     item["displayKey"] = "unresolved-nbt:" + key
                     modified = True
-                    if query_key:
-                        display_candidates = bee_index.get(query_key, set())
+                    if identity:
+                        display_candidates = bee_index.get(identity, set())
                         if len(display_candidates) == 1:
                             item["displayKey"] = next(iter(display_candidates))
                             modified = True
@@ -2309,7 +2312,7 @@ class _RecipeAssociations:
                             issue = ("missing_display_item" if not display_candidates
                                      else "ambiguous_display_item")
                             # Never let rawKey fallback choose an arbitrary bee variant.
-                            item["displayKey"] = query_key
+                            item["displayKey"] = f"unresolved-bee:{identity[1]}"
                             item["associationError"] = issue
                             modified = True
                             self.diagnostics.append({
@@ -2318,7 +2321,8 @@ class _RecipeAssociations:
                                 "recipeIndex": recipe.get("index"),
                                 "slot": slot_key,
                                 "rawKey": original_key,
-                                "queryKey": query_key,
+                                "beeSpecies": identity[0],
+                                "beeType": identity[1],
                                 "issue": issue,
                                 "candidates": sorted(display_candidates),
                             })
@@ -2514,6 +2518,7 @@ TASKS = {
     "biomes":     ("Biomes",       do_biomes),
     "achievements": ("Achievements", do_achievements),
     "entities":   ("Entities",     do_entities),
+    "bees":       ("Bees",         do_bees),
     "guidenh":    ("GuideNH",      do_guidenh),
 }
 

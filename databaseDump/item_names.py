@@ -10,6 +10,7 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
+from bee_identity import FIELDS as BEE_FIELDS, bee_identity
 from bounded_json import DEFAULT_MAX_BYTES, encode_json, validate_limit, write_bounded
 from routing_hash import bucket_id, choose_bucket_count
 from item_buckets import write_item_buckets
@@ -276,7 +277,7 @@ def resolve_images(groups, choices, physical_icons=(), items=()):
 
 
 def _name_pages(mapping, metadata, max_bytes):
-    """按字段成员分页；同名记录跨页时，读取方合并数组和 queryKeys 映射。"""
+    """按字段成员分页；同名记录跨页时，读取方合并数组和 beeIdentities 映射。"""
     names = {}
     shell_size = len(encode_json({**metadata, "names": {}}))
     size = shell_size
@@ -289,7 +290,7 @@ def _name_pages(mapping, metadata, max_bytes):
                 cost = 0 if name in names else len(encode_json({name: current})) - 2 + bool(names)
                 if value is None:
                     pass
-                elif field == "queryKeys":
+                elif field == "beeIdentities":
                     pair = {value[0]: value[1]}
                     cost += (len(encode_json(pair)) - 2 + bool(current[field]) if field in current
                              else len(encode_json({field: pair})) - 2 + bool(current))
@@ -303,7 +304,7 @@ def _name_pages(mapping, metadata, max_bytes):
                 yield encode_json({**metadata, "names": names})
                 names, size = {}, shell_size
             current = names.setdefault(name, {"keys": []})
-            if field == "queryKeys":
+            if field == "beeIdentities":
                 current.setdefault(field, {})[value[0]] = value[1]
             elif value is not None:
                 current.setdefault(field, []).append(value)
@@ -312,10 +313,10 @@ def _name_pages(mapping, metadata, max_bytes):
         yield encode_json({**metadata, "names": names})
 
 
-def write_name_index(names, output, max_bytes=DEFAULT_MAX_BYTES, *, query_keys=None, raw_keys=None, handlers=None):
+def write_name_index(names, output, max_bytes=DEFAULT_MAX_BYTES, *, bees=None, raw_keys=None, handlers=None):
     validate_limit(max_bytes)
     output = Path(output)
-    raw_keys, query_keys, handlers = raw_keys or {}, query_keys or {}, handlers or {}
+    raw_keys, bees, handlers = raw_keys or {}, bees or {}, handlers or {}
     records = {}
     for name, values in sorted(names.items()):
         keys = sorted(set(values))
@@ -323,9 +324,9 @@ def write_name_index(names, output, max_bytes=DEFAULT_MAX_BYTES, *, query_keys=N
         raw = sorted({raw_keys.get(key, key) for key in keys})
         if raw != keys:
             record["rawKeys"] = raw
-        semantic = {key: query_keys[key] for key in keys if query_keys.get(key)}
-        if semantic:
-            record["queryKeys"] = semantic
+        identities = {key: dict(zip(BEE_FIELDS, bees[key])) for key in keys if bees.get(key)}
+        if identities:
+            record["beeIdentities"] = identities
         for field in ("sourceHandlers", "usageHandlers"):
             paths = handlers.get(field, {}).get(name)
             if paths:
@@ -355,10 +356,11 @@ def write_item_name_index(items, version_dir, output=None):
     items = list(items)
     names, _ = collect_names(items)
     raw_keys = {item["key"]: item["rawKey"] for item in items if item.get("rawKey")}
-    query_keys = {item["key"]: item["queryKey"] for item in items if item.get("queryKey")}
-    handlers = collect_handlers(names, raw_keys, query_keys, version_dir)
+    bees = {item["key"]: identity for item in items
+            if (identity := bee_identity(item, item.get("rawKey") or item["key"]))}
+    handlers = collect_handlers(names, raw_keys, bees, version_dir)
     return write_name_index(names, output or Path(version_dir) / "ItemNames",
-                            raw_keys=raw_keys, query_keys=query_keys, handlers=handlers)
+                            raw_keys=raw_keys, bees=bees, handlers=handlers)
 
 
 def build_artifacts(items, version_dir, state_dir, source_dir, config, icon_source=None, *, write_items=True):
