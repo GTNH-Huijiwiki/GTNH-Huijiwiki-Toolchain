@@ -12,6 +12,7 @@ from pathlib import Path
 
 from bee_identity import FIELDS as BEE_FIELDS, bee_identity
 from bounded_json import DEFAULT_MAX_BYTES, encode_json, validate_limit, write_bounded
+from icon_names import directory_renames, icon_files
 from routing_hash import bucket_id, choose_bucket_count
 from item_buckets import write_item_buckets
 from name_recipes import collect_handlers
@@ -194,8 +195,9 @@ def generate_preferred_config(items, path, config, icon_map):
         raise ValueError("生成清单不能覆盖首选配置")
     choices = dict(load_choices(config))
     icon_order = {}
+    renames = directory_renames(Path(icon_map).parent)
     for index, row in enumerate(json.loads(Path(icon_map).read_text('utf-8'))['shortKey']):
-        icon_order.setdefault(row['iconName'], index)
+        icon_order.setdefault(renames.get(row['iconName'], row['iconName']), index)
 
     items = list(items)
     _, groups = collect_names(items)
@@ -368,7 +370,7 @@ def build_artifacts(items, version_dir, state_dir, source_dir, config, icon_sour
     state_dir.mkdir(parents=True, exist_ok=True)
     items = list(items)
     names, groups = collect_names(items)
-    physical_icons = (path.name for path in (Path(source_dir) / "icons").glob("*.png"))
+    physical_icons = icon_files(Path(source_dir) / "icons")
     redirects, unresolved, invalid = resolve_images(groups, load_choices(config), physical_icons, items)
     count = write_item_name_index(items, version_dir)
     item_dir = Path(version_dir) / "Items"

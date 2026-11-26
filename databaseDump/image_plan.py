@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
+from icon_names import directory_renames, icon_files, local_path
 from item_exclusions import excluded_icons, load_policy
 
 
@@ -48,7 +49,7 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
     from item_names import canonical_file, is_quest_placeholder
 
     icons_dir = Path(icons_dir)
-    physical = {path.name for path in icons_dir.glob('*.png')}
+    physical = icon_files(icons_dir)
     skipped = excluded_icons(items, icon_records, policy) if policy is not None else set()
     physical -= skipped
     if policy is not None:
@@ -106,7 +107,7 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
                 by_hash = defaultdict(list)
                 names = sorted(variants, key=variants.get)
                 # Dumper 的像素哈希清单免去解码；清单缺项时才读图（两种哈希不会相等，只会少合并、不会误合并）。
-                hashes = pool.map(lambda icon: (pixel_hashes or {}).get(icon) or pixel_hash(icons_dir / icon), names)
+                hashes = pool.map(lambda icon: (pixel_hashes or {}).get(icon) or pixel_hash(local_path(icons_dir, icon)), names)
                 for icon, digest in zip(names, hashes):
                     by_hash[digest].append(icon)
                     hashed += 1
@@ -169,8 +170,7 @@ def prepare_plan(source, resolved_csv):
         database = (Path(__file__).parent / 'image_inventory.db'
                     if state_dir.parent.name == 'GTNH' else state_dir / 'image_inventory.db')
         if database.is_file():
-            filenames = {'File:' + canonical_file(path.name): path.name
-                         for path in (source / 'icons').glob('*.png')}
+            filenames = {'File:' + canonical_file(name): name for name in icon_files(source / 'icons')}
             with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as conn:
                 if conn.execute("SELECT 1 FROM sqlite_master WHERE name='redirects'").fetchone():
                     cached['keyAliases'] = {
@@ -178,17 +178,22 @@ def prepare_plan(source, resolved_csv):
                         conn.execute('SELECT redirect_from, icon_name FROM redirects')
                         if title in filenames and filenames[title] != target}
                     print(f"Reused {len(cached['keyAliases']):,} key redirects from local image state")
+    renames = directory_renames(source)
+    items = json.loads((source / 'advitempanel.json').read_text('utf-8'))['shortKey']
+    records = json.loads(Path(report['sourceIconsPath']).read_text('utf-8'))['shortKey']
+    for rows, field in ((items, 'icon'), (records, 'iconName')):
+        for row in rows:
+            if row.get(field) in renames:
+                row[field] = renames[row[field]]
     manifest = Path(report['sourceIconsPath']).with_name('icon-hashes.json')
     pixel_hashes = None
     if manifest.is_file():
         # 有 Dumper 像素哈希时按当前导出重建分组，旧缓存可能指向已改名的文件。
-        pixel_hashes = {name: 'dumper:' + digest
+        pixel_hashes = {renames.get(name, name): 'dumper:' + digest
                         for name, digest in json.loads(manifest.read_text('utf-8'))['images'].items()}
         cached = None
     plan = build_plan(
-        json.loads((source / 'advitempanel.json').read_text('utf-8'))['shortKey'],
-        json.loads(Path(report['sourceIconsPath']).read_text('utf-8'))['shortKey'],
-        source / 'icons', redirects, cached_plan=cached,
+        items, records, source / 'icons', redirects, cached_plan=cached,
         policy=load_policy(source, Path(report['sourceIconsPath']).parent), pixel_hashes=pixel_hashes)
     plan_path.write_text(
         json.dumps(plan, ensure_ascii=False, indent=2), 'utf-8')

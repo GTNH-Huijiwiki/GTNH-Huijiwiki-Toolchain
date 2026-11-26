@@ -31,6 +31,7 @@ import http.cookiejar
 import image_files
 from image_version import require_source
 from image_kinds import LABELS, kind_exempt, kind_from_argv, kind_paths, kind_plan, kind_unstable
+from icon_names import local_path
 from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy, reshaped_icons, HASH_CACHE
 from image_check import check_pending
 from pathlib import Path
@@ -165,9 +166,9 @@ def make_opener_with_jar(jar):
     return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
 
-def upload_one(opener, path: str, bot: bool = True) -> dict:
+def upload_one(opener, path: str, bot: bool = True, filename: str | None = None) -> dict:
     """上传一张图片（multipart，per-thread CSRF 独立管理）。"""
-    filename = os.path.basename(path)
+    filename = filename or os.path.basename(path)
     with open(path, "rb") as f:
         file_data = f.read()
 
@@ -253,7 +254,7 @@ def worker(icon_list: list, total: int, counters: dict, lock: threading.Lock,
         for icon_name in batch:
             if _stop.is_set():
                 return
-            path = os.path.join(ICONS_DIR, icon_name)
+            path = str(local_path(ICONS_DIR, icon_name))
 
             if not os.path.exists(path):
                 report("SKIP", icon_name, "(file not found)")
@@ -267,7 +268,7 @@ def worker(icon_list: list, total: int, counters: dict, lock: threading.Lock,
                     image_files.delete_page(post, get, "File:" + icon_name, "机器人：这个名字要上传真实图片，先删除重定向页", _stop)
                     counters["DELETED"] = counters.get("DELETED", 0) + 1
                 result = image_files.call_with_backoff(
-                    lambda: upload_one(opener, path, bot=True), icon_name, _stop)
+                    lambda: upload_one(opener, path, bot=True, filename=icon_name), icon_name, _stop)
                 if result.get("result") == "Success":
                     status, msg = "OK", ""
                 else:
