@@ -30,6 +30,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from icon_names import directory_renames, local_path
+
 FINGERPRINT_SIZE = 32
 MEAN_LIMIT = 1.0
 MAX_LIMIT = 32
@@ -120,7 +122,9 @@ def pixel_manifest(source) -> dict[str, str]:
     result = {}
     icons = Path(source) / 'icon-hashes.json'
     if icons.is_file():
-        result.update(json.loads(icons.read_text('utf-8'))['images'])
+        renames = directory_renames(source)
+        result.update({renames.get(name, name): digest
+                       for name, digest in json.loads(icons.read_text('utf-8'))['images'].items()})
     entities = Path(source) / 'entity-images.json'
     if entities.is_file():
         result.update(json.loads(entities.read_text('utf-8')).get('pixelHashes', {}))
@@ -262,7 +266,7 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
             info = files.get(name)
             if info is None:
                 continue
-            reshaped = info['sha1'] != content and name in exempt and _reshaped(info, Path(icons_dir) / name)
+            reshaped = info['sha1'] != content and name in exempt and _reshaped(info, local_path(icons_dir, name))
             if reshaped:
                 conn.execute('INSERT OR IGNORE INTO reshaped VALUES (?, ?)', (info['sha1'], content))
             set_uploaded(conn, name, info['sha1'])
@@ -279,7 +283,7 @@ def check_pending(db_path, icons_dir, current_icons, exempt, cache_dir, threads=
         name, content, info = task
         try:
             remote = download(info['url'], info['sha1'], cache_dir)
-            return name, content, info['sha1'], same_picture(name, remote, (Path(icons_dir) / name).read_bytes())
+            return name, content, info['sha1'], same_picture(name, remote, local_path(icons_dir, name).read_bytes())
         except Exception as error:  # noqa: BLE001 - 单张失败保留待更新，下次重试
             print(f'  compare failed {name}: {error}', flush=True)
             return name, content, info['sha1'], None

@@ -75,6 +75,10 @@ python databaseDump/image_redirect.py --kind entities
 重跑时按状态库和文件 sha1 缓存跳过，不再上传。GTNH-Dumper 的图片是其内容缓存的硬链接，
 像素不变时修改时间也不变，sha1 缓存几乎全部命中。
 
+GT 流体图标在维基上按流体 key 命名（`icon_fluid.molten.gold.png`），不用 Dumper 按数字流体 ID 起的本地文件名：
+ID 会随整合包版本挪位，按 ID 命名要整批重传，还会覆盖旧版本数据引用的图片。换算集中在
+`databaseDump/icon_names.py`，数据页、图片计划、状态库和黑名单都用维基文件名，本地 dumps 不改名。
+
 实体中文名重定向的取舍：
 - 多个实体同名时，注册名不带模组前缀的原版实体优先；仍不唯一则不建重定向。
 - 与物品图片的中文名或文件名重名时物品优先；Thaumic Tinkerer 的 `mobDisplay` 与 Thaumic Horizons 的 `dummy`

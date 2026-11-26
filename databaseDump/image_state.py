@@ -5,6 +5,8 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from icon_names import directory_renames, local_path
+
 
 def init_db(path):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -87,11 +89,12 @@ def icon_hashes(directory, icons, cache_path=None):
     import json
     import os
     icons = set(icons)
+    renames = directory_renames(Path(directory).parent)
     cache = {}
     if cache_path is not None and Path(cache_path).is_file():
         cache = json.loads(Path(cache_path).read_text("utf-8"))
-    stats = {entry.name: (entry.stat().st_size, entry.stat().st_mtime_ns)
-             for entry in os.scandir(directory) if entry.name in icons}
+    stats = {renames.get(entry.name, entry.name): (entry.stat().st_size, entry.stat().st_mtime_ns)
+             for entry in os.scandir(directory) if renames.get(entry.name, entry.name) in icons}
     missing = icons - stats.keys()
     if missing:
         raise FileNotFoundError(f"图标文件缺失: {sorted(missing)[:5]}")
@@ -104,7 +107,7 @@ def icon_hashes(directory, icons, cache_path=None):
             todo.append(name)
 
     def digest(name):
-        return name, hashlib.sha1((Path(directory) / name).read_bytes()).hexdigest()
+        return name, hashlib.sha1(local_path(directory, name).read_bytes()).hexdigest()
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         for name, sha1 in pool.map(digest, todo):

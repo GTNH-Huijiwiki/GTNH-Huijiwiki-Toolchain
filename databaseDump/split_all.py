@@ -22,6 +22,7 @@ from pathlib import Path
 from data_version import addon_mods, local_mod_name, source_directory, version_module_title, version_tag
 from item_names import build_artifacts, image_name_config, read_items, write_item_name_index
 from nbt_identity import nbt_identity
+from icon_names import fluid_icon_renames
 from item_exclusions import convert_fluid_displays, fluid_names, load_policy
 import guidenh_scope as gscope
 from ore_processing import FIELDS as ORE_PROCESSING_FIELDS, append_flags, read_recipe_documents
@@ -527,6 +528,10 @@ def _load_itemicon_map():
     print(f"  Loading icon data: {path} ({os.path.getsize(path) / 1024 / 1024:.1f} MB)...")
     with open(path, "r", encoding="utf-8") as stream:
         data = json.load(stream)
+    renames = {}
+    if os.path.isfile(reference_path("fluid.json")):
+        with open(reference_path("fluid.json"), "r", encoding="utf-8") as stream:
+            renames = fluid_icon_renames(json.load(stream)["fluids"], data["shortKey"])
     icon_map = {}
     skipped = 0
     for entry in data["shortKey"]:
@@ -535,7 +540,8 @@ def _load_itemicon_map():
             skipped += 1
             continue
         icon_map[sk] = {
-            "iconName": entry.get("iconName", ""),
+            # 流体图标换成按流体 key 命名的维基文件名，见 icon_names.py。
+            "iconName": renames.get(entry.get("iconName", ""), entry.get("iconName", "")),
             "size": entry.get("size", 0),
             "frameCount": entry.get("frameCount", 1),
         }
