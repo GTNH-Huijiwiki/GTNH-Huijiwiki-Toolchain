@@ -6,6 +6,7 @@ The rules are listed in README.md ("不导入维基的组合变体").
 import json
 from collections import Counter
 from pathlib import Path
+from icon_names import dynamic_name
 from nbt_identity import nbt_identity
 
 # Families whose recipes disappear together with their variants.
@@ -419,5 +420,5 @@ def excluded_icons(items, icon_records, policy):
         target = retained if policy.keep_item(item) else removed
         target.add(name)
         if record.get('frameCount', 1) > 1:
-            target.add(name.removesuffix('.png') + '_dynamic.png')
+            target.add(dynamic_name(name))
     return removed - retained

@@ -12,6 +12,8 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+# Dumper 默认导出 WebP；旧导出和 legacyPng 导出是 PNG。
+ICON_SUFFIXES = ('.png', '.webp')
 _GT_DISPLAY = re.compile(r'(gregtech:gt\.GregTech_FluidDisplay:\d+)(?:_(.+))?')
 # 与 Dumper 的 Utils.replaceHuijiIllegalChars 一致，另外替换标题中不能用或会与下划线混同的字符。
 _ILLEGAL = re.compile(r'[/:*"<>|\\?\[\]{}# ]')
@@ -19,6 +21,23 @@ _ILLEGAL = re.compile(r'[/:*"<>|\\?\[\]{}# ]')
 
 def _stem(value):
     return 'icon_' + _ILLEGAL.sub('_', value)
+
+
+def icon_stem(name):
+    """去掉图片扩展名。注册名里的点（gt.metaitem 等）保留。
+
+    黑名单和中文别名选择按它匹配，PNG（legacy）与 WebP 指的是同一个对象。
+    """
+    for suffix in ICON_SUFFIXES:
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    return name
+
+
+def dynamic_name(name):
+    """静态图标名 → 同扩展名的动画文件名。"""
+    stem, dot, suffix = name.rpartition('.')
+    return f'{stem}_dynamic.{suffix}' if dot else f'{name}_dynamic'
 
 
 def _title(name):
@@ -37,21 +56,21 @@ def fluid_icon_renames(fluids, records) -> dict[str, str]:
         if not local:
             continue
         match = _GT_DISPLAY.fullmatch(record.get('shortKey') or '')
+        extension = Path(local).suffix
         # 只换算按自身 shortKey 命名的图标；借用别的图标的记录跟随那条记录。
         if (not match or match[1] not in keys
-                or local != 'icon_' + re.sub(r'[/:*"<>|\\?]', '_', record['shortKey']) + '.png'):
+                or local != 'icon_' + re.sub(r'[/:*"<>|\\?]', '_', record['shortKey']) + extension):
             kept.append(local)
             continue
         suffix = '_' + match[2] if match[2] else ''
-        wiki = _stem(keys[match[1]] + suffix) + '.png'
+        wiki = _stem(keys[match[1]] + suffix) + extension
         if taken.setdefault(_title(wiki), local) != local:
             raise ValueError(f'流体图标改名后重名: {wiki}（{taken[_title(wiki)]} 与 {local}）')
         renames[local] = wiki
     clash = sorted(name for name in kept if name not in renames and _title(name) in taken)
     if clash:
         raise ValueError(f'流体图标改名后与现有图标重名: {clash[:5]}')
-    renames.update({local.removesuffix('.png') + '_dynamic.png': wiki.removesuffix('.png') + '_dynamic.png'
-                    for local, wiki in list(renames.items())})
+    renames.update({dynamic_name(local): dynamic_name(wiki) for local, wiki in list(renames.items())})
     return renames
 
 
@@ -82,6 +101,7 @@ def local_path(icons_dir, name) -> Path:
 
 
 def icon_files(icons_dir) -> set[str]:
-    """图标目录中全部 PNG 的维基文件名。"""
+    """图标目录中全部图标的维基文件名。"""
     renames = directory_renames(Path(icons_dir).parent)
-    return {renames.get(path.name, path.name) for path in Path(icons_dir).glob('*.png')}
+    return {renames.get(path.name, path.name) for path in Path(icons_dir).glob('*')
+            if path.suffix in ICON_SUFFIXES}

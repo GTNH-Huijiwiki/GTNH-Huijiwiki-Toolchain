@@ -358,6 +358,14 @@ class NameRoutingTests(unittest.TestCase):
         self.assertFalse(redirects)
         self.assertIn("铁锭.png", invalid)
 
+    def test_webp_aliases_keep_png_choices(self):
+        rows = [{'key': 'a:ingot', 'translatedName': '铁锭', 'iconName': 'one.webp'},
+                {'key': 'b:ingot', 'translatedName': '铁锭', 'iconName': 'two.webp'}]
+        _, groups = collect_names(rows)
+        self.assertEqual(list(groups), ['铁锭.webp'])
+        redirects, unresolved, invalid = resolve_images(groups, {'铁锭.png': {'key': 'b:ingot'}}, items=rows)
+        self.assertEqual((redirects, unresolved, invalid), ({'File:铁锭.webp': 'File:two.webp'}, {}, {}))
+
     def test_candidate_report_never_changes_choices(self):
         items = [{'key': 'gregtech:ingot', 'translatedName': '铜锭', 'iconName': 'gt.png'},
                  {'key': 'other:ingot', 'translatedName': '铜锭', 'iconName': 'other.png'}]

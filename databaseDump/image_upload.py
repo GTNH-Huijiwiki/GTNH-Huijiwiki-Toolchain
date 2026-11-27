@@ -31,7 +31,7 @@ import http.cookiejar
 import image_files
 from image_version import require_source
 from image_kinds import LABELS, kind_exempt, kind_from_argv, kind_paths, kind_plan, kind_unstable
-from icon_names import local_path
+from icon_names import icon_stem, local_path
 from image_state import update_state, icon_hashes, mark_uploaded, reconcile_legacy, reshaped_icons, HASH_CACHE
 from image_check import check_pending
 from pathlib import Path
@@ -87,7 +87,7 @@ def get_pending_icons(plan=None) -> list[str]:
     if plan is None:
         plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     current_icons = set(plan['uploadIcons'])
-    exempt = kind_exempt(KIND)
+    exempt = kind_exempt(KIND, current_icons)
     update_state(INVENTORY_DB, current_icons, plan['redirects'], icon_hashes(ICONS_DIR, current_icons, HASH_CACHE), exempt)
     with closing(sqlite3.connect(INVENTORY_DB)) as conn:
         legacy = [r[0] for r in conn.execute("SELECT icon_name FROM images WHERE icon_state='待核验'")
@@ -299,7 +299,8 @@ def main():
     tasks = get_pending_icons(plan)
     # 黑名单里的图标多次导出仍有波动，默认拒绝上传（线上没有的也不传），--force-unstable 才上传。
     # 线上尺寸与本地不同的除外：不传的话页面上的动图会显示错乱。
-    blocked = sorted(set(tasks) & kind_unstable(KIND) - reshaped_icons(INVENTORY_DB))
+    unstable = kind_unstable(KIND)
+    blocked = sorted({t for t in tasks if icon_stem(t) in unstable} - reshaped_icons(INVENTORY_DB))
     if blocked and "--force-unstable" not in args:
         tasks = [t for t in tasks if t not in set(blocked)]
         with closing(sqlite3.connect(INVENTORY_DB)) as conn:

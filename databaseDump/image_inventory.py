@@ -10,6 +10,7 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
+from icon_names import ICON_SUFFIXES
 from image_state import init_db as initialize_state, update_state, icon_hashes, HASH_CACHE
 from image_check import check_pending
 from image_kinds import LABELS, kind_exempt, kind_from_argv, kind_paths, kind_plan
@@ -62,7 +63,7 @@ def update_inventory(offline=False):
     plan = kind_plan(KIND, DUMPS_DIR, NEW_CSV)
     redirects = plan['redirects']
     icons = set(plan['uploadIcons'])
-    exempt = kind_exempt(KIND)
+    exempt = kind_exempt(KIND, icons)
     update_state(DB_PATH, icons, redirects, icon_hashes(ICONS_DIR, icons, HASH_CACHE), exempt)
     print(f"Current icons: {len(icons):,}; current redirects: {len(redirects):,}; exempt: {len(exempt):,}")
     if not offline:
@@ -73,8 +74,11 @@ def update_inventory(offline=False):
 def clean_dynamic():
     init_db()
     with closing(sqlite3.connect(DB_PATH)) as conn, conn:
-        conn.execute("DELETE FROM redirects WHERE icon_name LIKE '%\\_dynamic.png' ESCAPE '\\'")
-        count = conn.execute("DELETE FROM images WHERE icon_name LIKE '%\\_dynamic.png' ESCAPE '\\'").rowcount
+        count = 0
+        for suffix in ICON_SUFFIXES:
+            pattern = ('%\\_dynamic' + suffix,)
+            conn.execute("DELETE FROM redirects WHERE icon_name LIKE ? ESCAPE '\\'", pattern)
+            count += conn.execute("DELETE FROM images WHERE icon_name LIKE ? ESCAPE '\\'", pattern).rowcount
     print(f"Deleted {count:,} animation-strip tasks")
 
 

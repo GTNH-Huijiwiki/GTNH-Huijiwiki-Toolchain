@@ -489,15 +489,23 @@ GTNH 保留已有数据库和上传记录。图片任务只选择当前来源中
 计划保存在同一状态目录的 `image-upload-plan.json`，包含实体上传列表、最终重定向和各组哈希。
 
 只在同一注册物品 `modid:name` 内比较不同 damage/NBT 变体。哈希覆盖尺寸与完整 RGBA
-像素，PNG 压缩和文字元数据不同不影响比较；动画条带比较全部帧，APNG 比较逐帧合成后的完整 RGBA 画布、帧时长、循环次数和默认图像。
+像素，压缩方式和文字元数据不同不影响比较；动画条带比较全部帧，动画 WebP 与 APNG 比较逐帧合成后的完整 RGBA 画布、帧时长、循环次数和默认图像。
 同图优先选无 NBT、damage 为 0 的图片；缺少该项时依次按无 NBT、零 damage、damage 数值、
 完整 shortKey 和文件名排序。每个注册物品分别选择代表图片。
 
 同图变体保留自己的文件名，通过重定向指向代表图片并退出上传列表；中文名先按人工配置
 确定物品，再直接指向该物品最终代表图片。因此中文名和变体别名都是一级重定向。
-物品 key、NBT、配方数据、本地 PNG 和已上传文件历史均保留。额外素材沿用原有上传方式。
+物品 key、NBT、配方数据、本地图片和已上传文件历史均保留。额外素材沿用原有上传方式。
 
 Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数据源及本地清单。
+
+图标格式跟随导出：GTNH-Dumper 默认导出 WebP（动画是单个动画 WebP），`-LegacyPng` 或旧导出是 PNG（动画是横向帧条）。
+两种都能走同一套流程，中文别名的扩展名跟随所指向的图标。物品数据另带 `iconPixelated`、`animationPixelated`
+（导出记录了才有），供前端决定是否按像素风缩放。
+
+WebP 物品数据里的 `iconName` 是实际上传的文件：被同图合并掉的变体写合并目标的名字，因为前端按文件名直接算原图地址，
+不跟随文件重定向（2.9.2 中约 29% 的物品记录属于这种）。静态图和动画分别合并，动画名不等于 `<iconName>_dynamic.webp`
+时另记 `animationName`。PNG 数据不变，`[[File:]]` 会自己跟随重定向。GuideNH 导航框数据表按 PNG 拼文件名，WebP 图标在前端支持前不写入。
 
 ### 文件页与重定向的坑
 
@@ -523,12 +531,13 @@ Wiki 图片标题为 `File:<图标文件名>`；模组和版本用于选择数�
 `image_upload.py` 上传前会再核对一次，所以未变化的图片不会反复上传。加 `--offline` 可跳过线上查询。
 
 1. 本地与线上文件 sha1 相同：不传。
-2. 黑名单 `config/image_unstable.json`（多次导出仍有波动的图标）：线上已有且像素尺寸相同的不更新；
+2. 黑名单 `config/image_unstable.json`（多次导出仍有波动的图标，名字不带扩展名，PNG 与 WebP 通用）：线上已有且像素尺寸相同的不更新；
    其余 `image_upload.py` 默认拒绝上传（线上没有的也不传，并列出这些缺失的图），加 `--force-unstable` 才上传。
    线上尺寸与本地不同时黑名单不起作用，照常上传。
 3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取 RGBA 通道差的最大值，
    平均 ≤ 1 且最大 ≤ 32 视为相同：不传。不同显卡、驱动下方块边缘的光栅化差异属于这一类。
-   动图帧条（`*_dynamic.png`）**逐帧**套用这条规则，任一帧超限即视为不同；帧数或帧尺寸变化直接视为不同。
+   动画（`*_dynamic.webp`，legacy 为帧条 `*_dynamic.png`）**逐帧**套用这条规则，任一帧超限即视为不同；
+   尺寸、帧数或时长变化直接视为不同。
 4. 其余上传，包括线上没有的图片。
 
 动图没有单独的免更新规则。数据页里的帧数、帧尺寸来自本次导出，线上帧条必须与之一致，
@@ -545,7 +554,10 @@ python image_check.py stability <第一次的 dumps> <第二次的 dumps> [更�
 python image_check.py stability <dumpsA> <dumpsB> --replace                 # 导出器修好一批后，用本次结果重建名单
 ```
 
-`icon-hashes.json` 由 GTNH-Dumper 写出，记录每个 PNG 的像素哈希；导出器已固定渲染时钟，
+从 PNG 换到 WebP 的第一次发布时，黑名单里的图标在线上还没有 `.webp` 文件，默认会被拒绝上传、页面上显示不出；
+这一次要给 `image_upload.py` 加 `--force-unstable`（线上已有且尺寸相同的黑名单图标不会因此重传）。
+
+`icon-hashes.json` 由 GTNH-Dumper 写出，记录每张图的像素哈希；导出器已固定渲染时钟，
 多数随时间变化的图标已经稳定，名单只收剩下的。
 
 判定存在 `image_inventory.db` 中，随仓库提交，其他维护者拉取仓库后同样复用，不必重新下载比对。
@@ -569,7 +581,7 @@ python item_names.py generate-config --output image-name-candidates.json
 python split_all.py items
 ```
 
-默认读取 `config/preferred-items.json`（`schemaVersion: 2`）。每个标题的 `key` 是明确指定的
+默认读取 `config/preferred-items.json`（`schemaVersion: 2`）。标题按不带扩展名匹配，清单里的 `名称.png` 对 WebP 导出同样有效。每个标题的 `key` 是明确指定的
 完整物品 key，优先于自动规则；显式 `null` 表示跳过该别名。未配置的名称自动使用默认偏好：
 先优先选择 tooltip 中没有“弃用”“移除”或 `deprecated` 标记的物品，再按
 Minecraft → 流体身份 `fluid.*` → GregTech → IC2 → 其他模组选择。在同一物品身份内优先无 NBT
@@ -618,7 +630,7 @@ python item_names.py generate-preferred --items-dir <预处理的Items目录> \
 失效 key 或已消失名称会报告并跳过，请在报告中核对并更新首选配置。
 配置、原物品数据或图标映射变更后必须重新预处理；图片发布前会验证当前配置路径和文件的 SHA-256，切换配置路径后也须重新预处理。
 
-图片状态使用 `images` 与 `redirects` 两张本地表，支持多个中文别名指向同一个 PNG。
+图片状态使用 `images` 与 `redirects` 两张本地表，支持多个中文别名指向同一个图片。
 首次运行图片清单时会迁移旧表中的上传状态。图片清单及上传脚本负责维护该数据库。
 旧表中同一个中文标题关联了多张图片时，该标题重新标为待更新，按当前人工选择纠正目标。
 

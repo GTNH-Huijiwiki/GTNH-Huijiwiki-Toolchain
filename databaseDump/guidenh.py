@@ -113,10 +113,13 @@ class ItemIndex:
         return len(self.by_raw)
 
     def icon_name(self, ident):
-        """物品 ID → 维基图标文件名（不带 .png）；找不到、动画图标（帧数大于 1）或没有图标时返回 None。"""
+        """物品 ID → 维基图标文件名（不带 .png）；找不到、动画图标（帧数大于 1）或没有图标时返回 None。
+
+        导航框数据表按 PNG 拼文件名，WebP 图标在前端支持前也返回 None。
+        """
         key = self.resolve(ident) if ident else None
         icon, frames = self.icons.get(key, (None, 1))
-        if not icon or frames > 1:
+        if not icon or frames > 1 or icon.lower().endswith('.webp'):
             return None
         return icon[:-4] if icon.lower().endswith('.png') else icon
 

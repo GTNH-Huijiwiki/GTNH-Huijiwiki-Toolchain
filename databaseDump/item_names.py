@@ -12,7 +12,7 @@ from pathlib import Path
 
 from bee_identity import FIELDS as BEE_FIELDS, bee_identity
 from bounded_json import DEFAULT_MAX_BYTES, encode_json, validate_limit, write_bounded
-from icon_names import directory_renames, icon_files
+from icon_names import ICON_SUFFIXES, directory_renames, icon_files, icon_stem
 from routing_hash import bucket_id, choose_bucket_count
 from item_buckets import write_item_buckets
 from name_recipes import collect_handlers
@@ -32,15 +32,15 @@ def file_hash(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def image_title(name):
-    """先沿用 Dumper 的文件名清理，再合并 MediaWiki 等价标题。"""
+def image_title(name, suffix=".png"):
+    """先沿用 Dumper 的文件名清理，再合并 MediaWiki 等价标题。扩展名跟随所指向的图标。"""
     name = re.sub(r'[/\\:*"<>|?]', "", name)
     name = name.translate(str.maketrans("[]{}#", "-----"))
     name = " ".join(unicodedata.normalize("NFC", name).replace("_", " ").split())
     if not name:
         return None
     first = name[0].upper()
-    return (first if len(first) == 1 else name[0]) + name[1:] + ".png"
+    return (first if len(first) == 1 else name[0]) + name[1:] + suffix
 
 
 def canonical_file(title):
@@ -75,8 +75,11 @@ def collect_names(items):
         if is_quest_placeholder(item) or is_mob_display(item):
             continue
         icon = item.get("iconName") or item.get("icon")
-        title = image_title(name)
-        if not icon or not title:
+        if not icon:
+            continue
+        suffix = Path(icon).suffix
+        title = image_title(name, suffix if suffix in ICON_SUFFIXES else ".png")
+        if not title:
             continue
         row = {"key": key, "name": name, "icon": icon, "mod": item.get("modName") or item.get("mod", "")}
         old = candidates[title].get(key)
@@ -98,7 +101,14 @@ def load_choices(path):
         if (not isinstance(choice, dict) or "key" not in choice
                 or choice["key"] is not None and not isinstance(choice["key"], str)):
             raise ValueError(f"无效的图片名称选择: {title}")
+    if len({icon_stem(title) for title in data["choices"]}) != len(data["choices"]):
+        raise ValueError(f"同一名称有 .png 与 .webp 两条选择: {path}")
     return data["choices"]
+
+
+def choices_by_stem(choices):
+    """选择按不带扩展名的名称匹配：清单里的 “名称.png” 对 WebP 图标同样有效。"""
+    return {icon_stem(title): choice for title, choice in choices.items()}
 
 
 def filter_image_candidates(items):
@@ -202,8 +212,9 @@ def generate_preferred_config(items, path, config, icon_map):
     items = list(items)
     _, groups = collect_names(items)
     by_key = {item['key']: item for item in items}
+    chosen_stems = choices_by_stem(choices)
     for title, rows in groups.items():
-        if title in choices:
+        if icon_stem(title) in chosen_stems:
             continue
         candidates, _ = filter_image_candidates([by_key[row['key']] for row in rows])
         if len(candidates) < 2:
@@ -233,11 +244,12 @@ def generate_config(items, path, config):
     _, groups = collect_names(items)
     by_key = {item['key']: item for item in items}
     candidates = {}
+    chosen_stems = choices_by_stem(choices)
     for title, rows in groups.items():
         selected, reasons = default_image_candidate([by_key[row['key']] for row in rows])
         candidates[title] = {"candidates": rows, "defaultKey": selected, "defaultReasons": reasons}
-        if title in choices:
-            candidates[title]["choice"] = choices[title]
+        if icon_stem(title) in chosen_stems:
+            candidates[title]["choice"] = chosen_stems[icon_stem(title)]
     result = {"candidates": candidates, "configSha256": file_hash(config)}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", "utf-8")
@@ -251,9 +263,10 @@ def resolve_images(groups, choices, physical_icons=(), items=()):
     invalid = {}
     all_icons = {canonical_file(row["icon"]) for rows in groups.values() for row in rows}
     all_icons.update(canonical_file(icon) for icon in physical_icons)
+    chosen_stems = choices_by_stem(choices)
     for title, rows in groups.items():
-        if title in choices:
-            selected = choices[title].get("key")
+        if icon_stem(title) in chosen_stems:
+            selected = chosen_stems[icon_stem(title)].get("key")
             matches = [row for row in rows if row["key"] == selected]
             if selected is None:
                 continue
@@ -273,8 +286,10 @@ def resolve_images(groups, choices, physical_icons=(), items=()):
                 invalid[title] = {"reason": "中文别名与实际图片文件标题冲突", "key": chosen["key"]}
             continue
         redirects["File:" + title] = "File:" + chosen["icon"]
-    for title in choices.keys() - groups.keys():
-        invalid[title] = {"reason": "配置中的名称已不存在", "key": choices[title].get("key")}
+    grouped_stems = {icon_stem(title) for title in groups}
+    for title in choices:
+        if icon_stem(title) not in grouped_stems:
+            invalid[title] = {"reason": "配置中的名称已不存在", "key": choices[title].get("key")}
     return redirects, unresolved, invalid
 
 

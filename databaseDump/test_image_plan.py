@@ -221,5 +221,24 @@ class ImagePlanTests(unittest.TestCase):
             self.assertNotIn('File:C dynamic.png', plan['redirects'])
 
 
+class PublishedNameTest(unittest.TestCase):
+    def test_webp_records_name_the_uploaded_files(self):
+        from image_plan import use_published_names
+        aliases = {'b.webp': 'a.webp', 'b_dynamic.webp': 'a_dynamic.webp', 'c.webp': 'a.webp',
+                   'd_dynamic.webp': 'a_dynamic.webp', 'old.png': 'a.png'}
+        items = [{'iconName': 'a.webp', 'frameCount': 8},
+                 {'iconName': 'b.webp', 'frameCount': 8},
+                 # 静态图并到 a，动画没有并：动画仍是自己的文件
+                 {'iconName': 'c.webp', 'frameCount': 8},
+                 # 动画并到 a，静态图没有并
+                 {'iconName': 'd.webp', 'frameCount': 8},
+                 {'iconName': 'c.webp', 'frameCount': 1},
+                 {'iconName': 'old.png', 'frameCount': 8}]
+        self.assertEqual(use_published_names(items, aliases), (3, 2))
+        self.assertEqual([(i['iconName'], i.get('animationName')) for i in items],
+                         [('a.webp', None), ('a.webp', None), ('a.webp', 'c_dynamic.webp'),
+                          ('d.webp', 'a_dynamic.webp'), ('a.webp', None), ('old.png', None)])
+
+
 if __name__ == '__main__':
     unittest.main()
