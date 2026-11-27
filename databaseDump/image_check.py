@@ -10,8 +10,8 @@
    也不传；image_upload.py 加 --force-unstable 才上传。线上文件尺寸与本地不同时黑名单不起作用，照常上传：
    数据页写的是本地帧数与帧尺寸，旧帧条会显示错乱。
 3. 视觉规则：两张图缩到 32×32（BOX 平均、按 alpha 预乘）后逐像素取通道差最大值，
-   平均值 ≤ 1 且最大值 ≤ 32 视为相同：不传。动图帧条（*_dynamic.png）逐帧套用，任一帧超限即视为不同；
-   整图尺寸不同（帧数或帧尺寸变化）直接视为不同。判定按（线上 sha1，本地 sha1）记在 image_inventory.db
+   平均值 ≤ 1 且最大值 ≤ 32 视为相同：不传。动画（*_dynamic.webp，legacy 为帧条 *_dynamic.png）逐帧套用，
+   任一帧超限即视为不同；图片尺寸或动画时长不同直接视为不同。判定按（线上 sha1，本地 sha1）记在 image_inventory.db
    （随仓库提交，其他维护者同样复用），下次不再下载比对。
 4. 其余上传。
 """
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from icon_names import directory_renames, local_path
+from icon_names import directory_renames, icon_stem, local_path
 
 FINGERPRINT_SIZE = 32
 MEAN_LIMIT = 1.0
@@ -100,21 +100,64 @@ def strips_same(a: bytes, b: bytes) -> bool:
     return True
 
 
+def _timeline(image):
+    """动画 WebP 的 [(时长毫秒, RGBA 帧)]。导出器会把相同的相邻帧并成一帧加长时长。"""
+    frames = []
+    for index in range(getattr(image, 'n_frames', 1)):
+        image.seek(index)
+        # Pillow 读 WebP 时要先解码，info 里才是这一帧的时长。
+        image.load()
+        frames.append((image.info.get('duration', 0), image.convert('RGBA')))
+    return frames
+
+
+def animations_same(a: bytes, b: bytes) -> bool:
+    """动画逐帧套用视觉规则：画布尺寸和总时长相同，且同一时刻显示的两帧都在限度内。"""
+    with Image.open(io.BytesIO(a)) as first, Image.open(io.BytesIO(b)) as second:
+        if first.size != second.size:
+            return False
+        one, other = _timeline(first), _timeline(second)
+    if len(one) == 1 or len(other) == 1:
+        return len(one) == len(other) and visually_same(a, b)
+    if sum(duration for duration, _ in one) != sum(duration for duration, _ in other):
+        return False
+    i = j = 0
+    left, right = one[0][0], other[0][0]
+    while i < len(one) and j < len(other):
+        x, y = one[i][1], other[j][1]
+        if x.tobytes() != y.tobytes() \
+                and not _within_limits(_distance(_fingerprint_pixels(x), _fingerprint_pixels(y))):
+            return False
+        step = min(left, right)
+        left, right = left - step, right - step
+        if not left:
+            i += 1
+            left = one[i][0] if i < len(one) else 0
+        if not right:
+            j += 1
+            right = other[j][0] if j < len(other) else 0
+    return True
+
+
 def same_picture(name: str, remote: bytes, local: bytes) -> bool:
-    return (strips_same if name.endswith('_dynamic.png') else visually_same)(remote, local)
+    if not icon_stem(name).endswith('_dynamic'):
+        return visually_same(remote, local)
+    return (animations_same if name.endswith('.webp') else strips_same)(remote, local)
 
 
 # ── 黑名单 ────────────────────────────────────────────────────
+# 名单里是不带扩展名的图标名：PNG（legacy）与 WebP 导出共用同一份。
 
 def unstable_icons() -> set[str]:
     if not UNSTABLE_CONFIG.is_file():
         return set()
-    return set(json.loads(UNSTABLE_CONFIG.read_text('utf-8'))['icons'])
+    return {icon_stem(name) for name in json.loads(UNSTABLE_CONFIG.read_text('utf-8'))['icons']}
 
 
-def exempt_icons() -> dict[str, str]:
-    """图标名 → 免更新原因（线上已有同尺寸文件时不更新）。"""
-    return {name: 'unstable' for name in unstable_icons()}
+def exempt_icons(names) -> dict[str, str]:
+    """names 中免更新的图标名 → 原因（线上已有同尺寸文件时不更新）。"""
+    unstable = unstable_icons()
+    return {name: 'unstable' for name in names if icon_stem(name) in unstable}
 
 
 def pixel_manifest(source) -> dict[str, str]:
@@ -144,12 +187,14 @@ def record_stability(sources, replace=False) -> dict:
         raise ValueError('至少需要两次导出')
     manifests = [pixel_manifest(source) for source in sources]
     common = set.intersection(*(set(m) for m in manifests))
-    changed = {name for name in common if len({m[name] for m in manifests}) > 1}
-    known = unstable_icons() - common if replace else unstable_icons()
+    changed = {icon_stem(name) for name in common if len({m[name] for m in manifests}) > 1}
+    compared = {icon_stem(name) for name in common}
+    known = unstable_icons() - compared if replace else unstable_icons()
     merged = sorted(known | changed)
     UNSTABLE_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     UNSTABLE_CONFIG.write_text(json.dumps({
         'description': '图片黑名单：同一整合包、同一导出器多次导出像素仍不同的图标（渲染依赖时间或随机数）。'
+                       '名字不带扩展名，PNG 与 WebP 通用。'
                        'image_upload.py 默认拒绝上传这些图标，加 --force-unstable 才上传。'
                        '由 image_check.py stability 生成。',
         'icons': merged}, ensure_ascii=False, indent=1) + chr(10), 'utf-8')

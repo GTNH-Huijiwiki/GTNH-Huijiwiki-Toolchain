@@ -545,6 +545,10 @@ def _load_itemicon_map():
             "size": entry.get("size", 0),
             "frameCount": entry.get("frameCount", 1),
         }
+        # 是否按像素风缩放。旧导出没有这两个字段，此时不写，前端按原图宽度兜底。
+        for field in ("iconPixelated", "animationPixelated"):
+            if field in entry:
+                icon_map[sk][field] = entry[field]
     del data
     print(f"  Icon map: {len(icon_map):,} entries ({skipped} skipped without shortKey)")
     return icon_map
@@ -616,6 +620,17 @@ def _merge_item_icons(items: list, icon_map: dict):
     for item in items:
         item.pop("icon", None)
     print(f"  Merged icon data into {len(items):,} items.")
+
+
+def _use_published_icon_names(items: list):
+    """WebP 导出：物品数据写实际上传的图名，见 image_plan.use_published_names。"""
+    if not any(str(item.get("iconName", "")).endswith(".webp") for item in items):
+        return
+    from image_plan import key_aliases, use_published_names
+    if not os.path.isdir(os.path.join(DUMPS_DIR, "icons")):
+        raise SystemExit(f"WebP 物品数据需要图标目录来确定实际上传的图名: {os.path.join(DUMPS_DIR, 'icons')}")
+    renamed, separate = use_published_names(items, key_aliases(DUMPS_DIR, reference_path("itemicon.json")))
+    print(f"  [Icons] {renamed:,} icon names point at the uploaded duplicate; {separate:,} record animationName")
 
 
 def _load_fluid_map():
@@ -705,6 +720,7 @@ def do_items(debug: bool):
     # ① 合并 itemicon.json 数据（必须在 fluid 合并之前，因为之后 shortKey 会被改写）
     icon_map = _load_itemicon_map()
     _merge_item_icons(items, icon_map)
+    _use_published_icon_names(items)
 
     # ② 合并 fluid.json 数据（改写 GregTech_FluidDisplay → fluid.key）
     fluid_map = _load_fluid_map()
@@ -1150,6 +1166,7 @@ def do_items_tabx(debug: bool):
     # ① 合并 itemicon.json 数据（必须在 fluid 合并之前）
     icon_map = _load_itemicon_map()
     _merge_item_icons(items, icon_map)
+    _use_published_icon_names(items)
 
     # ② 合并 fluid.json 数据（改写 GregTech_FluidDisplay → fluid.key）
     fluid_map = _load_fluid_map()

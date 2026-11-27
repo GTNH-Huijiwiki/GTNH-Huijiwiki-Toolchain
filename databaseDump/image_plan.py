@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PIL import Image
-from icon_names import directory_renames, icon_files, local_path
+from icon_names import directory_renames, dynamic_name, icon_files, local_path
 from item_exclusions import excluded_icons, load_policy
 
 
@@ -26,6 +26,8 @@ def pixel_hash(path):
             digest.update(json.dumps(playback).encode())
             for index in range(image.n_frames):
                 image.seek(index)
+                # WebP 要先解码，info 里才是这一帧的时长。
+                image.load()
                 # Pillow 合成 disposal/blend 后的完整画布；编码方式不同但播放像素相同可合并。
                 duration = None if default_image and index == 0 else image.info.get('duration', 0)
                 digest.update(json.dumps(duration).encode() + b'\0')
@@ -72,7 +74,7 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
         nbt = item.get('nbt')
         has_nbt = bool(nbt and str(nbt).strip() != '{}')
         images = [('static', icon)]
-        dynamic = icon.removesuffix('.png') + '_dynamic.png'
+        dynamic = dynamic_name(icon)
         if record.get('frameCount', 0) > 1 and dynamic in physical:
             images.append(('animation', dynamic))
         for role, filename in images:
@@ -151,6 +153,55 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
             'groups': groups, 'keyAliases': dict(sorted(aliases.items()))}
 
 
+def plan_inputs(source, icon_source):
+    """分组用的原始物品记录、图标记录和 Dumper 像素哈希（没有清单时为 None），图名都换成维基文件名。"""
+    source, icon_source = Path(source), Path(icon_source)
+    renames = directory_renames(source)
+    items = json.loads((source / 'advitempanel.json').read_text('utf-8'))['shortKey']
+    records = json.loads(icon_source.read_text('utf-8'))['shortKey']
+    for rows, field in ((items, 'icon'), (records, 'iconName')):
+        for row in rows:
+            if row.get(field) in renames:
+                row[field] = renames[row[field]]
+    manifest = icon_source.with_name('icon-hashes.json')
+    pixel_hashes = None
+    if manifest.is_file():
+        pixel_hashes = {renames.get(name, name): 'dumper:' + digest
+                        for name, digest in json.loads(manifest.read_text('utf-8'))['images'].items()}
+    return items, records, pixel_hashes
+
+
+def key_aliases(source, icon_source) -> dict[str, str]:
+    """本次导出里会被合并掉的图名 → 实际上传的图名；与上传计划的分组一致。"""
+    items, records, pixel_hashes = plan_inputs(source, icon_source)
+    return build_plan(items, records, Path(source) / 'icons', {},
+                      policy=load_policy(source, Path(icon_source).parent),
+                      pixel_hashes=pixel_hashes)['keyAliases']
+
+
+def use_published_names(items, aliases) -> tuple[int, int]:
+    """把 WebP 物品记录的图名换成实际上传的文件，返回 (换掉的静态图名数, 另记动画名的数量)。
+
+    前端按文件名直接算原图地址，不跟随文件重定向。静态图和动画各自分组，合并到的变体可能不同，
+    这时动画名推不出来，记在 animationName。PNG（legacy）记录不动：[[File:]] 会自己跟随重定向。
+    """
+    renamed = separate = 0
+    for item in items:
+        own = item.get('iconName')
+        if not own or not own.endswith('.webp'):
+            continue
+        target = aliases.get(own, own)
+        if (item.get('frameCount') or 1) > 1:
+            animation = aliases.get(dynamic_name(own), dynamic_name(own))
+            if animation != dynamic_name(target):
+                item['animationName'] = animation
+                separate += 1
+        if target != own:
+            item['iconName'] = target
+            renamed += 1
+    return renamed, separate
+
+
 def prepare_plan(source, resolved_csv):
     """复用本地 key 重定向，只刷新名称别名；上传前不重新计算图片 hash。"""
     from image_version import redirect_map
@@ -178,19 +229,9 @@ def prepare_plan(source, resolved_csv):
                         conn.execute('SELECT redirect_from, icon_name FROM redirects')
                         if title in filenames and filenames[title] != target}
                     print(f"Reused {len(cached['keyAliases']):,} key redirects from local image state")
-    renames = directory_renames(source)
-    items = json.loads((source / 'advitempanel.json').read_text('utf-8'))['shortKey']
-    records = json.loads(Path(report['sourceIconsPath']).read_text('utf-8'))['shortKey']
-    for rows, field in ((items, 'icon'), (records, 'iconName')):
-        for row in rows:
-            if row.get(field) in renames:
-                row[field] = renames[row[field]]
-    manifest = Path(report['sourceIconsPath']).with_name('icon-hashes.json')
-    pixel_hashes = None
-    if manifest.is_file():
+    items, records, pixel_hashes = plan_inputs(source, report['sourceIconsPath'])
+    if pixel_hashes is not None:
         # 有 Dumper 像素哈希时按当前导出重建分组，旧缓存可能指向已改名的文件。
-        pixel_hashes = {renames.get(name, name): 'dumper:' + digest
-                        for name, digest in json.loads(manifest.read_text('utf-8'))['images'].items()}
         cached = None
     plan = build_plan(
         items, records, source / 'icons', redirects, cached_plan=cached,

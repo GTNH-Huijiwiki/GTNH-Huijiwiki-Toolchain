@@ -218,10 +218,10 @@ class StabilityTest(unittest.TestCase):
             with patch('image_check.UNSTABLE_CONFIG', config):
                 result = image_check.record_stability([root / 'a', root / 'b'])
                 self.assertEqual(result['added'], 1)
-                self.assertEqual(image_check.unstable_icons(), {'old.png', 'y.png'})
+                self.assertEqual(image_check.unstable_icons(), {'old', 'y'})
                 # 修好导出器后用新结果重建名单：只重建本次比较到的文件，其余（如另一类图片）保持原状
                 image_check.record_stability([root / 'a', root / 'a'], replace=True)
-                self.assertEqual(image_check.unstable_icons(), {'old.png'})
+                self.assertEqual(image_check.unstable_icons(), {'old'})
 
     def test_entity_images_join_the_comparison(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -235,7 +235,58 @@ class StabilityTest(unittest.TestCase):
             with patch('image_check.UNSTABLE_CONFIG', config):
                 result = image_check.record_stability([root / 'a', root / 'b'], replace=True)
                 self.assertEqual(result['compared'], 2)
-                self.assertEqual(image_check.unstable_icons(), {'item.png', 'EntityHead X.png'})
+                self.assertEqual(image_check.unstable_icons(), {'item', 'EntityHead X'})
+
+    def test_blacklist_matches_png_and_webp_alike(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / 'image_unstable.json'
+            # 旧格式（带扩展名）和新格式都能读；注册名里的点不是扩展名。
+            config.write_text(json.dumps({'icons': ['icon_a_gt.metaitem.01_1.png', 'icon_b_dynamic']}))
+            names = ['icon_a_gt.metaitem.01_1.png', 'icon_a_gt.metaitem.01_1.webp', 'icon_b_dynamic.webp',
+                     'icon_b.webp', 'icon_a_gt.metaitem.01_10.webp']
+            with patch('image_check.UNSTABLE_CONFIG', config):
+                self.assertEqual(set(image_check.exempt_icons(names)), set(names[:3]))
+
+
+def animation(colors, durations, size=16, name_format='WEBP'):
+    frames = [Image.new('RGBA', (size, size), color) for color in colors]
+    buffer = io.BytesIO()
+    frames[0].save(buffer, name_format, save_all=True, append_images=frames[1:], duration=durations,
+                   loop=0, lossless=True)
+    return buffer.getvalue()
+
+
+class WebpAnimationRuleTest(unittest.TestCase):
+    RED, GREEN, BLUE = (255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255)
+
+    def same(self, a, b):
+        return image_check.same_picture('a_dynamic.webp', a, b)
+
+    def test_split_and_merged_frames_play_the_same(self):
+        merged = animation([self.RED, self.GREEN], [100, 50])
+        near = animation([(254, 1, 0, 255), self.GREEN], [100, 50])
+        self.assertTrue(self.same(merged, near))
+
+    def test_wrong_frame_timing_or_length_is_different(self):
+        base = animation([self.RED, self.GREEN, self.BLUE], [50, 50, 50])
+        self.assertFalse(self.same(base, animation([self.RED, self.BLUE, self.GREEN], [50, 50, 50])))
+        self.assertFalse(self.same(base, animation([self.RED, self.GREEN, self.BLUE], [100, 50, 50])))
+        # 总时长相同、切换时刻不同
+        self.assertFalse(self.same(animation([self.RED, self.GREEN], [100, 50]),
+                                   animation([self.RED, self.GREEN], [50, 100])))
+
+    def test_canvas_size_change_is_different(self):
+        self.assertFalse(self.same(animation([self.RED, self.GREEN], [50, 50]),
+                                   animation([self.RED, self.GREEN], [50, 50], size=32)))
+
+    def test_still_webp_uses_the_visual_rule(self):
+        stills = []
+        for color in (self.RED, (254, 1, 0, 255), self.BLUE):
+            buffer = io.BytesIO()
+            Image.new('RGBA', (16, 16), color).save(buffer, 'WEBP', lossless=True)
+            stills.append(buffer.getvalue())
+        self.assertTrue(image_check.same_picture('a.webp', stills[0], stills[1]))
+        self.assertFalse(image_check.same_picture('a.webp', stills[0], stills[2]))
 
 
 if __name__ == '__main__':

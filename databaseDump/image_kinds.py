@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 from data_version import local_mod_name, source_directory, version_tag
+from icon_names import ICON_SUFFIXES
 
 KINDS = ('items', 'entities', 'guidenh')
 LABELS = {'items': '物品图片', 'entities': '实体图片', 'guidenh': 'GuideNH 图片'}
@@ -81,12 +82,12 @@ def guidenh_plan() -> dict:
     return {'schemaVersion': 1, 'uploadIcons': plan['uploadIcons'], 'redirects': {}}
 
 
-def kind_exempt(kind: str) -> dict[str, str]:
-    """免更新名单来自 config/image_unstable.json；实体图片的文件名不与物品图标重叠。"""
+def kind_exempt(kind: str, names) -> dict[str, str]:
+    """names 中免更新的图片，名单来自 config/image_unstable.json；实体图片的文件名不与物品图标重叠。"""
     if kind == 'guidenh':
         return {}  # 指南图片不是游戏渲染的物品图标，没有渲染波动
     from image_check import exempt_icons
-    return exempt_icons()
+    return exempt_icons(names)
 
 
 def kind_unstable(kind: str) -> set[str]:
@@ -98,7 +99,7 @@ def kind_unstable(kind: str) -> set[str]:
 
 import re
 
-_MOB_DISPLAY_ICON = re.compile(r'(?i)^icon[ _]ThaumicTinkerer[ _]mobDisplay|^icon[ _]ThaumicHorizons[ _]dummy\.png$')
+_MOB_DISPLAY_ICON = re.compile(r'(?i)^icon[ _]ThaumicTinkerer[ _]mobDisplay|^icon[ _]ThaumicHorizons[ _]dummy\.(?:png|webp)$')
 
 
 def _item_titles(source: Path) -> set[str]:
@@ -122,7 +123,8 @@ def _item_titles(source: Path) -> set[str]:
                     continue
                 titles.add('File:' + canonical_file(row[0].removeprefix('File:')))
     if Path(icons).is_dir():
-        titles.update('File:' + canonical_file(path.name) for path in Path(icons).glob('*.png'))
+        titles.update('File:' + canonical_file(path.name) for path in Path(icons).glob('*')
+                      if path.suffix in ICON_SUFFIXES)
     return titles
 
 
