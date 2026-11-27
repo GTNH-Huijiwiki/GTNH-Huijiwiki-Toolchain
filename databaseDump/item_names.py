@@ -35,7 +35,8 @@ def file_hash(path):
 def image_title(name, suffix=".png"):
     """先沿用 Dumper 的文件名清理，再合并 MediaWiki 等价标题。扩展名跟随所指向的图标。"""
     name = re.sub(r'[/\\:*"<>|?]', "", name)
-    name = name.translate(str.maketrans("[]{}#", "-----"))
+    # U+FFFD 是游戏里读坏的字符（常见于格式符 §），MediaWiki 不接受它出现在标题里。
+    name = name.translate(str.maketrans("[]{}#�", "------"))
     name = " ".join(unicodedata.normalize("NFC", name).replace("_", " ").split())
     if not name:
         return None
