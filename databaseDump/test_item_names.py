@@ -8,7 +8,7 @@ from contextlib import closing
 from unittest.mock import patch
 
 from image_state import init_db, pending_redirects, update_state
-from item_names import build_artifacts, collect_names, default_image_candidate, generate_config, generate_preferred_config, load_choices, resolve_images, write_name_index
+from item_names import build_artifacts, collect_names, default_image_candidate, generate_config, generate_preferred_config, image_title, load_choices, resolve_images, write_name_index
 from image_version import redirect_map
 from item_buckets import write_item_buckets
 from recipe_buckets import build_recipe_buckets, recipe_route, SUPPORTED_HANDLERS
@@ -33,6 +33,9 @@ class NameRoutingTests(unittest.TestCase):
         self.assertEqual(redirects, {'File:铁锭.png': 'File:iron.png',
                                      'File:任务指南.png': 'File:book.png'})
         self.assertFalse(unresolved or invalid)
+
+    def test_image_title_replaces_broken_characters(self):
+        self.assertEqual('-fVanadiumsteel Hammer.webp', image_title('�fVanadiumsteel Hammer', '.webp'))
 
     def test_image_mod_priority_and_variant_preferences(self):
         keys = ['minecraft:stone', 'fluid.stone', 'gregtech:stone', 'IC2:stone', 'other:stone']

@@ -75,11 +75,14 @@ def build_plan(items, icon_records, icons_dir, name_redirects, *, cached_plan=No
         has_nbt = bool(nbt and str(nbt).strip() != '{}')
         images = [('static', icon)]
         dynamic = dynamic_name(icon)
-        if record.get('frameCount', 0) > 1 and dynamic in physical:
+        animated = record.get('frameCount', 0) > 1
+        if animated and dynamic in physical:
             images.append(('animation', dynamic))
         for role, filename in images:
             owners[filename].add(registry)
-            rank = (has_nbt, damage != 0, damage, item.get('shortKey', raw), filename)
+            # 像素相同时让本来就是静态图的物品保留实体文件，带动画的物品指过去
+            # （例如六相铜的静态帧与退火铜相同，实体图应是退火铜的）。
+            rank = (has_nbt, damage != 0, animated, damage, item.get('shortKey', raw), filename)
             previous = candidates[(registry, role)].get(filename)
             if previous is None or rank < previous:
                 candidates[(registry, role)][filename] = rank

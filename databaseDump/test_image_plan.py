@@ -220,6 +220,18 @@ class ImagePlanTests(unittest.TestCase):
             self.assertEqual(plan['redirects']['File:B dynamic.png'], 'a_dynamic.png')
             self.assertNotIn('File:C dynamic.png', plan['redirects'])
 
+    def test_static_item_keeps_the_file_over_an_animated_one_with_the_same_pixels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('glitch', 'plain', 'glitch_dynamic'):
+                Image.new('RGBA', (1, 1), 'red').save(root / (name + '.png'))
+            items = [{'key': 'mod:item:147', 'shortKey': 'glitch'}, {'key': 'mod:item:345', 'shortKey': 'plain'}]
+            records = [{'shortKey': 'glitch', 'iconName': 'glitch.png', 'frameCount': 2},
+                       {'shortKey': 'plain', 'iconName': 'plain.png', 'frameCount': 1}]
+            plan = build_plan(items, records, root, {})
+            self.assertEqual(plan['uploadIcons'], ['glitch_dynamic.png', 'plain.png'])
+            self.assertEqual(plan['redirects'], {'File:Glitch.png': 'plain.png'})
+
 
 class PublishedNameTest(unittest.TestCase):
     def test_webp_records_name_the_uploaded_files(self):

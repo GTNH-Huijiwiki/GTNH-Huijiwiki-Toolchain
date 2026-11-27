@@ -545,9 +545,10 @@ def _load_itemicon_map():
             "size": entry.get("size", 0),
             "frameCount": entry.get("frameCount", 1),
         }
-        # 是否按像素风缩放。旧导出没有这两个字段，此时不写，前端按原图宽度兜底。
-        for field in ("iconPixelated", "animationPixelated"):
-            if field in entry:
+        # 是否按像素风缩放；iconHalo 是图里没画、由网页另叠的出框光晕（贴图|aarrggbb|超出像素），只有带光晕的物品有。
+        # 旧导出没有这些字段，此时不写，前端按原图宽度兜底、不画光晕。
+        for field in ("iconPixelated", "animationPixelated", "iconHalo"):
+            if entry.get(field) is not None:
                 icon_map[sk][field] = entry[field]
     del data
     print(f"  Icon map: {len(icon_map):,} entries ({skipped} skipped without shortKey)")
