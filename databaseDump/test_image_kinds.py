@@ -71,6 +71,29 @@ class ImageKindsTest(unittest.TestCase):
         })
         self.assertEqual(set(plan['redirectConflicts']), {'File:妖精.png', 'File:曼德拉草.png'})
 
+    def test_entity_plan_webp_retires_png(self):
+        images = {
+            'Zombie': {'full': 'Entity Zombie.webp', 'head': 'EntityHead Zombie.webp'},
+            'witchery.mandrake': {'head': 'EntityHead witchery.mandrake.webp'},
+        }
+        entities = [{'id': 'Zombie', 'name': '僵尸'}, {'id': 'witchery.mandrake', 'name': '曼德拉草'}]
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            _write(directory, images, entities)
+            # 物品占着这个名字的 WebP，实体的 .webp 与 .png 别名都不能建。
+            with mock.patch.object(image_kinds, '_item_titles', return_value={'File:曼德拉草.webp'}):
+                plan = entity_plan(str(directory))
+        self.assertEqual(plan['redirects'], {
+            'File:僵尸.webp': 'EntityHead Zombie.webp',
+            'File:僵尸.png': 'EntityHead Zombie.webp',
+            'File:Entity Zombie.png': 'Entity Zombie.webp',
+            'File:EntityHead Zombie.png': 'EntityHead Zombie.webp',
+            'File:EntityHead witchery.mandrake.png': 'EntityHead witchery.mandrake.webp',
+        })
+        self.assertEqual(plan['retired'], [
+            'File:Entity Zombie.png', 'File:EntityHead Zombie.png', 'File:EntityHead witchery.mandrake.png'])
+        self.assertEqual(set(plan['redirectConflicts']), {'File:曼德拉草.webp'})
+
     def test_missing_file(self):
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)

@@ -507,6 +507,19 @@ WebP 物品数据里的 `iconName` 是实际上传的文件：被同图合并掉
 不跟随文件重定向（2.9.2 中约 29% 的物品记录属于这种）。静态图和动画分别合并，动画名不等于 `<iconName>_dynamic.webp`
 时另记 `animationName`。PNG 数据不变，`[[File:]]` 会自己跟随重定向。GuideNH 导航框数据表按 PNG 拼文件名，WebP 图标在前端支持前不写入。
 
+### 实体图片（`--kind entities`）
+
+数据源是 GTNH-Dumper `entityimages` 任务的 `dumps/entity-images`（连同 `entity-images.json`、`entities.json`），
+扩展名跟随导出。计划里的重定向：实体中文名指向头像（同名实体原版优先，与物品图片重名的不建）。WebP 导出另有：
+
+- 中文别名的 `.png` 也指向 WebP 头像；
+- 旧实体 PNG 文件名（`Entity <注册名>.png`、`EntityHead <注册名>.png`）指向同名 WebP，用来废弃 PNG 实体图。
+  这些名字下目前是实体图片自己的文件，普通运行只报 `CONFLICT`；确认 WebP 已上传、要删旧图时才运行
+  `python image_redirect.py --kind entities --delete-existing`。页面里直接写的旧文件名经重定向继续能用。
+
+换一种图片格式时用单独的版本目录记状态（如 `MOD_VERSION=2.9.2-webp`），物品重名判断读的也是该版本的
+`image_redirect.resolved.csv`。
+
 ### 文件页与重定向的坑
 
 曾经上传过文件的 `File:` 名字，之后再编辑成 `#REDIRECT [[File:目标]]`，重定向不会生效：文件还在，页面文本只被当作图片描述。
