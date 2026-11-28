@@ -510,12 +510,9 @@ WebP 物品数据里的 `iconName` 是实际上传的文件：被同图合并掉
 ### 实体图片（`--kind entities`）
 
 数据源是 GTNH-Dumper `entityimages` 任务的 `dumps/entity-images`（连同 `entity-images.json`、`entities.json`），
-扩展名跟随导出。计划里的重定向：实体中文名指向头像（同名实体原版优先，与物品图片重名的不建）。WebP 导出另有：
+扩展名跟随导出。计划里的重定向只有实体中文名指向头像（同名实体原版优先，与物品图片重名的不建）。
 
-- 中文别名的 `.png` 也指向 WebP 头像；
-- 旧实体 PNG 文件名（`Entity <注册名>.png`、`EntityHead <注册名>.png`）指向同名 WebP，用来废弃 PNG 实体图。
-  这些名字下目前是实体图片自己的文件，普通运行只报 `CONFLICT`；确认 WebP 已上传、要删旧图时才运行
-  `python image_redirect.py --kind entities --delete-existing`。页面里直接写的旧文件名经重定向继续能用。
+重定向名与目标的扩展名一致：换图片格式时不建旧扩展名指向新格式的重定向，线上旧格式的实体图片和它们的重定向原样保留。
 
 换一种图片格式时用单独的版本目录记状态（如 `MOD_VERSION=2.9.2-webp`），物品重名判断读的也是该版本的
 `image_redirect.resolved.csv`。
