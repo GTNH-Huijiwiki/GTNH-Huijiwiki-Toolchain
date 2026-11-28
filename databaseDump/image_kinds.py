@@ -5,9 +5,10 @@ image_inventory.py、image_upload.py、image_redirect.py 用 --kind 选择种类
 - items：物品与流体图标（dumps/icons），上传计划与中文别名来自 split_all.py items 的结果，
   状态记在 image_inventory.db（GTNH）或 source_state/<模组>/<版本>/image_inventory.db。
 - entities：GTNH-Dumper entityimages 任务导出的实体图片（dumps/entity-images），
-  全身照 ``Entity <注册名>.png`` 与像素头像 ``EntityHead <注册名>.png`` 都上传；
-  中文别名 ``<实体中文名>.png`` 重定向到头像。状态记在
-  source_state/<模组>/<版本>/entity_image_inventory.db。
+  全身照 ``Entity <注册名>`` 与像素头像 ``EntityHead <注册名>`` 都上传，扩展名跟随导出（WebP，legacyPng 为 PNG）；
+  中文别名 ``<实体中文名>`` 重定向到头像。WebP 导出另有两类 ``.png`` 重定向：中文别名的 ``.png``（页面和
+  按名称取图的兜底仍在用）与旧实体 PNG 文件名 → 同名 WebP（旧文件退役，要删掉自己的 PNG 文件才建得成，
+  所以只有加 --delete-existing 时才会动它们）。状态记在 source_state/<模组>/<版本>/entity_image_inventory.db。
 - guidenh：split_all.py guidenh 放进 source_state/GuideNH/images/ 的图片（指南页面里的图，
   以及官方静态站预渲染的 3D 场景静态图），上传计划在 image-plan.json，没有中文别名；
   状态记在 source_state/GuideNH/image_inventory.db。文件名由内容决定的场景图换了内容就是新文件名，
@@ -129,7 +130,10 @@ def _item_titles(source: Path) -> set[str]:
 
 
 def entity_plan(source: str) -> dict:
-    """实体图片计划：上传 entity-images.json 中的全部文件；中文名唯一且不与物品图片重名时重定向到头像。"""
+    """实体图片计划：上传 entity-images.json 中的全部文件；中文名唯一且不与物品图片重名时重定向到头像。
+
+    返回值的 retired 是退役重定向的标题（旧实体 PNG 文件名 → 同名 WebP），它们名下目前是实体图片自己的文件。
+    """
     from item_names import canonical_file
     source = Path(source)
     manifest_path = source / 'entity-images.json'
@@ -155,8 +159,9 @@ def entity_plan(source: str) -> dict:
         name = (entities.get(entity_id) or {}).get('name')
         if not name:
             continue
-        by_title.setdefault('File:' + canonical_file(name + '.png'), []).append((entity_id, head))
-    item_titles = _item_titles(source)
+        by_title.setdefault('File:' + canonical_file(name + Path(head).suffix), []).append((entity_id, head))
+    # 重名按去掉扩展名比较：物品占了某个中文名，它的 .png 与 .webp 都不能指向实体。
+    item_stems = {title.rsplit('.', 1)[0] for title in _item_titles(source)}
     redirects, conflicts = {}, {}
     for title, owners in sorted(by_title.items()):
         if len(owners) > 1:
@@ -167,14 +172,23 @@ def entity_plan(source: str) -> dict:
                 owners = vanilla
         if len(owners) > 1:
             conflicts[title] = '多个实体同名: ' + ', '.join(entity for entity, _ in owners)
-        elif title in item_titles:
+        elif title.rsplit('.', 1)[0] in item_stems:
             conflicts[title] = '与物品图片重名: ' + owners[0][0]
         else:
             redirects[title] = owners[0][1]
+            if title.endswith('.webp'):
+                redirects[title[:-len('.webp')] + '.png'] = owners[0][1]
+    aliases = len(redirects)
+    retired = []
+    for name in sorted(uploads):
+        if name.endswith('.webp'):
+            old = 'File:' + canonical_file(name[:-len('.webp')] + '.png')
+            redirects[old] = name
+            retired.append(old)
     plan = {'schemaVersion': 1, 'uploadIcons': sorted(uploads), 'redirects': redirects,
-            'redirectConflicts': conflicts}
-    print(f"Entity image plan: {len(uploads):,} files; {len(redirects):,} name redirects; "
-          f"{len(conflicts):,} names left out")
+            'redirectConflicts': conflicts, 'retired': retired}
+    print(f"Entity image plan: {len(uploads):,} files; {aliases:,} name redirects; "
+          f"{len(retired):,} retired PNG names; {len(conflicts):,} names left out")
     for title, reason in list(conflicts.items())[:20]:
         print(f'  left out {title}: {reason}')
     return plan
