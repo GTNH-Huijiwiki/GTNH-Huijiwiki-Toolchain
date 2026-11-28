@@ -100,9 +100,7 @@ def get_pending_redirects(plan=None, recheck: bool = False) -> list[tuple[str, s
         tasks = sorted((title, icon) for title, icon in current_redirects.items() if icon in uploaded)
     if KIND == 'entities' and tasks:
         # 实体中文名可能已被人工上传的独立图片占用，不把它改成重定向。
-        # 退役项名下本来就是旧实体 PNG，照常走“有自己的文件”的流程（没加 --delete-existing 时只报冲突）。
-        retired = set(plan.get('retired', ()))
-        taken = standalone_files(title for title, _ in tasks if title not in retired)
+        taken = standalone_files(title for title, _ in tasks)
         for title in sorted(taken):
             print(f"  left out {title}: 线上已有同名独立图片")
         tasks = [(title, icon) for title, icon in tasks if title not in taken]
